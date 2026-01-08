@@ -18,8 +18,6 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({ meeting, participant, 
 
   useEffect(() => {
     const fetchIB = async () => {
-      // In a real app we'd need participant1 but we'll use a placeholder for demo
-      // Fix: User has categories now, passing participant as both for demographic context in placeholder
       const ib = await getIcebreakers(participant, participant); 
       setIcebreakers(ib);
       setLoadingIcebreakers(false);
@@ -48,64 +46,64 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({ meeting, participant, 
 
   return (
     <div className="max-w-4xl mx-auto animate-in fade-in zoom-in duration-300">
-      <div className="bg-slate-900 rounded-t-3xl p-8 text-white flex justify-between items-center shadow-2xl">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center">
-            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse mr-3"></span>
-            Échange en direct
+      <div className="bg-slate-900 rounded-t-2xl md:rounded-t-3xl p-6 md:p-8 text-white flex flex-col md:flex-row justify-between items-center gap-4 shadow-2xl">
+        <div className="text-center md:text-left">
+          <h2 className="text-xl md:text-2xl font-bold flex items-center justify-center md:justify-start">
+            <span className="w-2 md:w-3 h-2 md:h-3 bg-red-500 rounded-full animate-pulse mr-3"></span>
+            En direct
           </h2>
-          <p className="text-slate-400 text-sm mt-1 uppercase tracking-widest font-bold">Table n°{meeting.tableNumber}</p>
+          <p className="text-slate-400 text-[10px] md:text-sm mt-1 uppercase tracking-widest font-bold">Table n°{meeting.tableNumber} • Round {meeting.round}</p>
         </div>
-        <div className="text-5xl font-mono font-black text-indigo-400">{formatTime(timeLeft)}</div>
+        <div className="text-4xl md:text-5xl font-mono font-black text-indigo-400">{formatTime(timeLeft)}</div>
       </div>
       
-      <div className="w-full bg-slate-800 h-3">
+      <div className="w-full bg-slate-800 h-2 md:h-3">
         <div 
           className="bg-indigo-500 h-full transition-all duration-1000 ease-linear shadow-[0_0_15px_rgba(99,102,241,0.5)]" 
           style={{ width: `${progress}%` }}
         ></div>
       </div>
 
-      <div className="bg-white p-10 rounded-b-3xl shadow-xl grid grid-cols-1 md:grid-cols-2 gap-12 border-x border-b border-slate-100">
+      <div className="bg-white p-6 md:p-10 rounded-b-2xl md:rounded-b-3xl shadow-xl grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 border-x border-b border-slate-100">
         <div className="space-y-6">
-          <div className="flex items-center space-x-6">
-            <img src={participant.avatar} className="w-24 h-24 rounded-3xl border-4 border-slate-50 shadow-lg object-cover" alt="" />
+          <div className="flex flex-col md:flex-row items-center md:items-start text-center md:text-left space-y-4 md:space-y-0 md:space-x-6">
+            <img src={participant.avatar} className="w-20 h-20 md:w-24 md:h-24 rounded-2xl md:rounded-3xl border-4 border-slate-50 shadow-lg object-cover" alt="" />
             <div>
-              <h3 className="text-3xl font-black text-slate-900">{participant.name}</h3>
-              <p className="text-indigo-600 font-bold text-lg">{participant.role}</p>
-              <p className="text-slate-400 font-medium">{participant.company}</p>
+              <h3 className="text-2xl md:text-3xl font-black text-slate-900">{participant.name}</h3>
+              <p className="text-indigo-600 font-bold text-base md:text-lg">{participant.role}</p>
+              <p className="text-slate-400 font-medium text-sm">{participant.company}</p>
             </div>
           </div>
           
-          <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Expertise & Background</h4>
-            <p className="text-slate-700 leading-relaxed font-medium italic">"{participant.bio}"</p>
+          <div className="bg-slate-50 p-4 md:p-6 rounded-2xl border border-slate-100">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Expertise</h4>
+            <p className="text-slate-700 leading-relaxed font-medium italic text-sm md:text-base">"{participant.bio}"</p>
           </div>
 
-          <div className="inline-block bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100">
-            {/* Fix: use categories array */}
-            {participant.categories.join(', ')}
+          <div className="flex flex-wrap gap-2">
+            {participant.categories.map(cat => (
+              <span key={cat} className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-[10px] font-bold border border-indigo-100">
+                {cat}
+              </span>
+            ))}
           </div>
         </div>
 
         <div className="space-y-6">
-          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 p-8 rounded-3xl relative overflow-hidden shadow-sm">
-            <div className="absolute top-4 right-4 text-amber-200">
-              <svg className="w-12 h-12" fill="currentColor" viewBox="0 0 20 20"><path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1a1 1 0 112 0v1a1 1 0 11-2 0zM13.536 13.536a1 1 0 011.414 0l.707.707a1 1 0 11-1.414 1.414l-.707-.707a1 1 0 010-1.414zM16.464 16.464a1 1 0 010 1.414l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 0zM4.243 14.243a1 1 0 010-1.414l.707-.707a1 1 0 011.414 1.414l-.707.707a1 1 0 01-1.414 0z"></path></svg>
-            </div>
-            <h4 className="text-amber-900 font-black mb-6 flex items-center text-lg">
+          <div className="bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 p-6 md:p-8 rounded-2xl md:rounded-3xl relative overflow-hidden shadow-sm">
+            <h4 className="text-amber-900 font-black mb-4 md:mb-6 flex items-center text-base md:text-lg">
               <span className="mr-3">🪄</span> Icebreakers IA
             </h4>
             {loadingIcebreakers ? (
               <div className="space-y-4">
-                <div className="h-4 bg-amber-200/50 animate-pulse rounded w-3/4"></div>
-                <div className="h-4 bg-amber-200/50 animate-pulse rounded w-full"></div>
-                <div className="h-4 bg-amber-200/50 animate-pulse rounded w-5/6"></div>
+                <div className="h-3 bg-amber-200/50 animate-pulse rounded w-3/4"></div>
+                <div className="h-3 bg-amber-200/50 animate-pulse rounded w-full"></div>
+                <div className="h-3 bg-amber-200/50 animate-pulse rounded w-5/6"></div>
               </div>
             ) : (
-              <ul className="space-y-6">
+              <ul className="space-y-4 md:space-y-6">
                 {icebreakers.map((q, i) => (
-                  <li key={i} className="text-amber-900 text-sm italic font-bold border-l-4 border-amber-300 pl-4 leading-relaxed">
+                  <li key={i} className="text-amber-900 text-xs md:text-sm italic font-bold border-l-4 border-amber-300 pl-4 leading-relaxed">
                     "{q}"
                   </li>
                 ))}
@@ -113,7 +111,7 @@ export const MeetingRoom: React.FC<MeetingRoomProps> = ({ meeting, participant, 
             )}
           </div>
           
-          <Button variant="danger" className="w-full h-14 text-lg font-bold shadow-lg" onClick={onFinish}>
+          <Button variant="danger" className="w-full h-14 md:h-16 text-lg font-bold shadow-lg rounded-2xl" onClick={onFinish}>
             Mettre fin à l'échange
           </Button>
         </div>

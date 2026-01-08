@@ -25,7 +25,7 @@ export const Scoring: React.FC<ScoringProps> = ({ meetingId, meetingUser, onSubm
       </div>
       
       <h2 className="text-3xl font-black text-slate-900">Notez l'échange</h2>
-      <p className="text-slate-500 mt-2 mb-8">Votre feedback sur <span className="font-bold text-indigo-600">{meetingUser.name}</span> est précieux.</p>
+      <p className="text-slate-500 mt-2 mb-8">Votre feedback sur votre pair <span className="font-bold text-indigo-600">{meetingUser.name}</span> est précieux pour créer les futurs duos.</p>
       
       <div className="flex justify-center space-x-3 mb-10">
         {[1, 2, 3, 4, 5].map((star) => (
@@ -53,7 +53,7 @@ export const Scoring: React.FC<ScoringProps> = ({ meetingId, meetingUser, onSubm
       <Button
         className="w-full h-14 text-xl font-bold shadow-indigo-200 shadow-xl"
         disabled={score === 0}
-        onClick={() => onSubmit({ meetingId, fromId: 'current', toId: meetingUser.id, score, comment })}
+        onClick={() => onSubmit({ meetingId, fromId: 'pair-current', toId: meetingUser.id, score, comment })}
       >
         Valider le score
       </Button>

@@ -2,20 +2,22 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { User } from "../types";
 
-// Removed top-level ai instance to initialize inside functions for better control
+/**
+ * Service pour interagir avec l'API Gemini.
+ * Utilise exclusivement process.env.API_KEY comme requis.
+ */
 
 export const getIcebreakers = async (user1: User, user2: User): Promise<string[]> => {
   try {
-    // Initialize GoogleGenAI right before making the call
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Generate 3 professional icebreaker questions for a networking meeting between these two professionals:
+      contents: `Génère 3 questions d'icebreaker professionnelles pour une rencontre de networking entre ces deux profils :
       
-      Professional 1: ${user1.name}, ${user1.role} in ${user1.categories.join(', ')} at ${user1.company}. Bio: ${user1.bio}
-      Professional 2: ${user2.name}, ${user2.role} in ${user2.categories.join(', ')} at ${user2.company}. Bio: ${user2.bio}
+      Pair 1 : ${user1.name}, ${user1.role} (${user1.categories.join(', ')}) chez ${user1.company}. Bio : ${user1.bio}
+      Pair 2 : ${user2.name}, ${user2.role} (${user2.categories.join(', ')}) chez ${user2.company}. Bio : ${user2.bio}
       
-      Keep them relevant to their specific fields and potential synergy. Language: French.`,
+      Les questions doivent être pertinentes, favoriser la synergie et être en français.`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -31,39 +33,36 @@ export const getIcebreakers = async (user1: User, user2: User): Promise<string[]
       }
     });
 
-    // Directly access .text property
     const text = response.text;
-    if (!text) throw new Error("Empty response from AI");
+    if (!text) throw new Error("Réponse vide de l'IA");
     const data = JSON.parse(text);
     return data.questions;
   } catch (error) {
-    console.error("Error fetching icebreakers:", error);
+    console.error("Erreur lors de la récupération des icebreakers:", error);
     return [
-      "Quels sont vos plus grands défis actuels ?",
-      "Comment voyez-vous l'évolution de votre secteur ?",
-      "Quelle collaboration idéale imaginez-vous ?"
+      "Quels sont vos plus grands défis stratégiques actuels ?",
+      "Comment imaginez-vous l'évolution de votre métier d'ici 2 ans ?",
+      "Quelle serait la collaboration idéale entre vos deux structures ?"
     ];
   }
 };
 
 export const getDuoSummary = async (user1: User, user2: User): Promise<string> => {
-    try {
-      // Initialize GoogleGenAI right before making the call
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Analayze why these two professionals form a great 'Power Duo' based on their profiles:
-        
-        P1: ${user1.name} (${user1.categories.join(', ')})
-        P2: ${user2.name} (${user2.categories.join(', ')})
-        
-        Provide a 2-sentence punchy summary in French explaining their synergy.`,
-      });
-  
-      // Directly access .text property
-      return response.text?.trim() || "Une synergie prometteuse basée sur des expertises complémentaires.";
-    } catch (error) {
-      console.error("Error fetching duo summary:", error);
-      return "Une synergie prometteuse basée sur des expertises complémentaires.";
-    }
-  };
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: `Analyse pourquoi ces deux pairs forment un excellent 'Duo' basé sur leurs profils :
+      
+      P1 : ${user1.name} (${user1.categories.join(', ')})
+      P2 : ${user2.name} (${user2.categories.join(', ')})
+      
+      Fournis un résumé percutant de 2 phrases en français expliquant leur synergie potentielle.`,
+    });
+
+    return response.text?.trim() || "Une synergie prometteuse basée sur des expertises complémentaires.";
+  } catch (error) {
+    console.error("Erreur lors de la récupération du résumé duo:", error);
+    return "Une synergie stratégique identifiée entre ces deux profils de haut niveau.";
+  }
+};

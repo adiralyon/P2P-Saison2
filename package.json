@@ -5,7 +5,7 @@
   "private": true,
   "description": "Application de Speed Matching entre Pairs - Saison 2",
   "engines": {
-    "node": ">=20.0.0"
+    "node": "22.x"
   },
   "dependencies": {
     "react": "^19.0.0",

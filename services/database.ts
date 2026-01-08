@@ -10,11 +10,11 @@ import { User, Meeting } from '../types';
  * Activez 'Realtime Database' dans la console Firebase.
  */
 const firebaseConfig = {
-  apiKey: "VOTRE_API_KEY",
-  authDomain: "votre-projet.firebaseapp.com",
-  databaseURL: "https://votre-projet-default-rtdb.firebaseio.com",
-  projectId: "votre-projet",
-  storageBucket: "votre-projet.appspot.com",
+  apiKey: "AIzaSyD__YfaQ0UmR5A9dx1fxIENkvXV082u6h8",
+  authDomain: "p2p-adira-3ecdd.firebaseapp.com",
+  databaseURL: "https://p2p-adira-default-rtdb.firebaseio.com/",
+  projectId: "p2p-adira-3ecdd",
+  storageBucket: "p2p-adira-3ecdd.firebasestorage.app",
   messagingSenderId: "123456789",
   appId: "1:123456789:web:abcdef"
 };

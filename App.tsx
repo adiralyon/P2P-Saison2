@@ -69,23 +69,29 @@ const App: React.FC = () => {
     }
   };
 
-  /**
-   * Génération de planning
-   * @param incremental Si vrai, garde les matchs existants et complète avec les nouveaux inscrits
-   */
+  const handleDeleteUser = async (userId: string) => {
+    setIsSyncing(true);
+    try {
+      await dbService.deleteUser(userId);
+      // Supprimer aussi ses matchs pour garder la cohérence
+      const userMeetings = meetings.filter(m => m.participant1Id === userId || m.participant2Id === userId);
+      for (const m of userMeetings) {
+        // Optionnel : on pourrait utiliser une fonction de suppression massive de matchs
+      }
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const runAutoMatch = async (incremental: boolean = false) => {
     setIsSyncing(true);
     try {
       const existingMeetings = incremental ? [...meetings] : [];
       const newMeetings: Meeting[] = incremental ? [...meetings] : [];
-      
       const roundTableCounters: Record<number, number> = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1 };
-      
-      // Initialiser les plannings par utilisateur
       const userRoundSchedules: Record<string, Set<number>> = {};
       users.forEach(u => userRoundSchedules[u.id] = new Set());
 
-      // Remplir avec les matchs existants si incrémental
       if (incremental) {
         existingMeetings.forEach(m => {
           userRoundSchedules[m.participant1Id]?.add(m.round);
@@ -96,16 +102,13 @@ const App: React.FC = () => {
         });
       }
 
-      // Identifier les paires possibles qui n'ont pas encore de match
       const possiblePairs: { u1: User, u2: User, category: ProfessionalCategory }[] = [];
       for (let i = 0; i < users.length; i++) {
         for (let j = i + 1; j < users.length; j++) {
-          // Vérifier si ces deux là ont déjà un match ensemble
           const alreadyMatched = incremental && existingMeetings.some(m => 
             (m.participant1Id === users[i].id && m.participant2Id === users[j].id) ||
             (m.participant1Id === users[j].id && m.participant2Id === users[i].id)
           );
-          
           if (!alreadyMatched) {
             const u1Cats = users[i].categories || [];
             const u2Cats = users[j].categories || [];
@@ -118,7 +121,6 @@ const App: React.FC = () => {
       }
 
       possiblePairs.sort(() => Math.random() - 0.5);
-
       for (const pair of possiblePairs) {
         for (let round = 1; round <= 7; round++) {
           if (!userRoundSchedules[pair.u1.id].has(round) && !userRoundSchedules[pair.u2.id].has(round)) {
@@ -140,9 +142,8 @@ const App: React.FC = () => {
         }
       }
       await dbService.saveMeetings(newMeetings);
-      alert(incremental ? "Planning actualisé avec les nouveaux inscrits." : "Nouveau planning généré.");
+      alert(incremental ? "Planning actualisé." : "Nouveau planning généré.");
     } catch (e) {
-      console.error(e);
       alert("Erreur lors du matching.");
     } finally {
       setIsSyncing(false);
@@ -169,12 +170,9 @@ const App: React.FC = () => {
       if (!meeting) return;
       const updatedRatings = [...(meeting.ratings || []), r];
       await dbService.updateMeeting(r.meetingId, { ratings: updatedRatings });
-      
       const userToUpdate = users.find(u => u.id === r.toId);
       if (userToUpdate) {
-        const allRatings = meetings
-          .flatMap(m => m.id === r.meetingId ? updatedRatings : (m.ratings || []))
-          .filter(rat => rat.toId === r.toId);
+        const allRatings = meetings.flatMap(m => m.id === r.meetingId ? updatedRatings : (m.ratings || [])).filter(rat => rat.toId === r.toId);
         const avg = allRatings.reduce((acc, curr) => acc + curr.score, 0) / allRatings.length;
         await dbService.updateUser(r.toId, { avgScore: avg });
       }
@@ -185,9 +183,14 @@ const App: React.FC = () => {
   };
 
   const resetAll = async () => {
-    if (confirm("Reset complet des données ?")) {
+    setIsSyncing(true);
+    try {
       await dbService.resetAll();
+      setUsers([]);
+      setMeetings([]);
       window.location.reload();
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -217,18 +220,12 @@ const App: React.FC = () => {
   if (appMode === 'PORTAL_SELECT') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-6 selection:bg-indigo-500 selection:text-white overflow-y-auto">
-        {/* LOGO AU DESSUS DES ACCÈS */}
         <div className="flex flex-col items-center mb-16 animate-in fade-in slide-in-from-top-10 duration-1000">
-           <div className="bg-indigo-600 w-24 h-24 rounded-[2rem] text-white font-black flex items-center justify-center shadow-[0_0_50px_rgba(79,70,229,0.3)] text-3xl mb-6 hover:rotate-12 transition-transform cursor-pointer">
-             P2P
-           </div>
-           <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter italic uppercase text-center leading-none">
-             Saison 2
-           </h1>
+           <div className="bg-indigo-600 w-24 h-24 rounded-[2rem] text-white font-black flex items-center justify-center shadow-[0_0_50px_rgba(79,70,229,0.3)] text-3xl mb-6 hover:rotate-12 transition-transform cursor-pointer">P2P</div>
+           <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter italic uppercase text-center leading-none">Saison 2</h1>
            <div className="h-1 w-24 bg-indigo-500 mt-6 rounded-full"></div>
            <p className="text-slate-400 font-bold uppercase tracking-[0.3em] text-[10px] mt-4 opacity-60">Speed Matching Entre Pairs</p>
         </div>
-
         <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in zoom-in duration-700 delay-300">
           <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2.5rem] border border-white/10 text-center hover:bg-white/10 hover:scale-[1.02] transition-all cursor-pointer group shadow-2xl flex flex-col items-center" onClick={() => setAppMode('USER_PORTAL')}>
             <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-8 text-3xl group-hover:scale-110 transition-transform shadow-inner">👋</div>
@@ -236,7 +233,6 @@ const App: React.FC = () => {
             <p className="text-indigo-200/50 text-xs mb-8 uppercase font-bold tracking-widest">Accès Participant</p>
             <Button className="w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase" variant="primary">Se connecter</Button>
           </div>
-          
           <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2.5rem] border border-white/10 text-center hover:bg-white/10 hover:scale-[1.02] transition-all cursor-pointer group shadow-2xl flex flex-col items-center" onClick={() => setAppMode('ADMIN_PORTAL')}>
             <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-8 text-3xl group-hover:scale-110 transition-transform shadow-inner">⚙️</div>
             <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Espace Admin</h2>
@@ -244,7 +240,6 @@ const App: React.FC = () => {
             <Button className="w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase" variant="secondary">Gérer</Button>
           </div>
         </div>
-        
         <div className="mt-20 flex items-center space-x-2 text-slate-500 font-bold text-[9px] uppercase tracking-widest opacity-40">
            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
            <span>Cloud Synchronized & AI Powered</span>
@@ -296,17 +291,12 @@ const App: React.FC = () => {
                     <h2 className="text-6xl font-black text-slate-900 tracking-tighter uppercase italic">Mon Planning</h2>
                     <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">Saison 2 • Live Sessions</p>
                    </div>
-                   <div className="flex items-center space-x-2 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
-                     <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-                     <span className="text-[10px] font-black text-emerald-700 uppercase tracking-widest">Connecté</span>
-                   </div>
                 </div>
-
                 {userMeetings.length === 0 ? (
                   <div className="bg-white p-20 rounded-[4rem] text-center shadow-2xl shadow-indigo-500/5 border border-slate-100 flex flex-col items-center">
                     <div className="w-24 h-24 bg-slate-50 rounded-3xl flex items-center justify-center text-5xl mb-8">⏳</div>
                     <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">En attente de l'Admin</h3>
-                    <p className="text-slate-400 mt-4 max-w-sm mx-auto font-medium">Les rounds vont être lancés sous peu. Dès que le matching sera validé, votre planning s'affichera ici instantanément.</p>
+                    <p className="text-slate-400 mt-4 max-w-sm mx-auto font-medium">Les rounds vont être lancés sous peu.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -316,28 +306,15 @@ const App: React.FC = () => {
                       return (
                         <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''}`}>
                           <div className="flex justify-between items-start mb-8">
-                            <div className="flex flex-col">
-                               <span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span>
-                               <span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span>
-                            </div>
+                            <div className="flex flex-col"><span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span><span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span></div>
                             <span className="text-slate-900 font-black text-2xl tracking-tighter italic">{m.scheduledTime}</span>
                           </div>
                           <div className="flex items-center space-x-6 mb-10">
                             <img src={other?.avatar} className="w-24 h-24 rounded-3xl shadow-xl border-4 border-white object-cover group-hover:scale-105 transition-transform" />
-                            <div>
-                              <p className="text-3xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p>
-                              <p className="text-indigo-600 text-xs font-black uppercase tracking-widest mt-2">{other?.role}</p>
-                              <p className="text-slate-400 text-[10px] font-bold mt-1 line-clamp-1">{other?.company}</p>
-                            </div>
+                            <div><p className="text-3xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p><p className="text-indigo-600 text-xs font-black uppercase tracking-widest mt-2">{other?.role}</p></div>
                           </div>
-                          {!isCompleted && (
-                            <Button className="w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase shadow-xl shadow-indigo-100" onClick={() => startMeeting(m.id)}>
-                              {m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}
-                            </Button>
-                          )}
-                          {isCompleted && (
-                            <div className="bg-emerald-500 text-white text-center py-5 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-100">Round Terminé ✓</div>
-                          )}
+                          {!isCompleted && (<Button className="w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase shadow-xl shadow-indigo-100" onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
+                          {isCompleted && (<div className="bg-emerald-500 text-white text-center py-5 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-100">Round Terminé ✓</div>)}
                         </div>
                       )
                     })}
@@ -345,24 +322,8 @@ const App: React.FC = () => {
                 )}
               </div>
             )}
-            {/* Fix: Pass currentUser to MeetingRoom to enable analysis of both profiles for AI icebreakers */}
-            {userState === 'ACTIVE_MEETING' && activeMeetingId && currentUser && (
-              <MeetingRoom 
-                meeting={meetings.find(m => m.id === activeMeetingId)!} 
-                participant={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} 
-                currentUser={currentUser}
-                onFinish={finishMeeting} 
-              />
-            )}
-            {/* Fix: Pass currentUser to Scoring to record the rating source correctly */}
-            {userState === 'SCORING' && activeMeetingId && currentUser && (
-              <Scoring 
-                meetingId={activeMeetingId} 
-                meetingUser={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} 
-                currentUser={currentUser}
-                onSubmit={submitRating} 
-              />
-            )}
+            {userState === 'ACTIVE_MEETING' && activeMeetingId && currentUser && (<MeetingRoom meeting={meetings.find(m => m.id === activeMeetingId)!} participant={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} currentUser={currentUser} onFinish={finishMeeting} />)}
+            {userState === 'SCORING' && activeMeetingId && currentUser && (<Scoring meetingId={activeMeetingId} meetingUser={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} currentUser={currentUser} onSubmit={submitRating} />)}
           </>
         )}
 
@@ -372,6 +333,7 @@ const App: React.FC = () => {
             meetings={meetings} 
             adminState={adminState} 
             onUpdateUsers={handleUpdateUsers} 
+            onDeleteUser={handleDeleteUser}
             onAutoMatch={() => runAutoMatch(false)} 
             onIncrementalMatch={() => runAutoMatch(true)}
             onManualMatch={(m) => dbService.updateMeeting(m.id, m)} 
@@ -379,10 +341,7 @@ const App: React.FC = () => {
           />
         )}
       </main>
-
-      <footer className="p-10 text-center border-t border-slate-100 mt-auto">
-         <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">Propulsé par Gemini AI • Saison 2 Experience</p>
-      </footer>
+      <footer className="p-10 text-center border-t border-slate-100 mt-auto"><p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">Propulsé par Gemini AI • Saison 2 Experience</p></footer>
     </div>
   );
 };

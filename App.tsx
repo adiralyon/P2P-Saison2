@@ -55,6 +55,14 @@ const App: React.FC = () => {
     };
   }, []);
 
+  // Sync currentUser with real-time data to catch matchId updates
+  useEffect(() => {
+    if (currentUser) {
+      const updated = users.find(u => u.id === currentUser.id);
+      if (updated) setCurrentUser(updated);
+    }
+  }, [users]);
+
   const generateCode = (firstName: string, lastName: string) => {
     const p = firstName.trim().charAt(0).toUpperCase() || 'X';
     const n = lastName.trim().slice(0, 3).toUpperCase().padEnd(3, 'X');
@@ -373,7 +381,49 @@ const App: React.FC = () => {
 
             {userState === 'SCHEDULE' && (
               <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                {currentRound && (
+                
+                {/* ETAT PAUSE */}
+                {currentRound === 0 && (
+                  <div className="bg-amber-500 text-white p-12 rounded-[3rem] shadow-2xl text-center flex flex-col items-center">
+                    <div className="text-6xl mb-6">☕️</div>
+                    <h3 className="text-4xl font-black uppercase italic tracking-tighter">Session en Pause</h3>
+                    <p className="text-amber-50 font-bold uppercase tracking-widest text-[10px] mt-4">Prenez un café, les rounds reprennent dans quelques instants.</p>
+                  </div>
+                )}
+
+                {/* ETAT FIN / CLÔTURE */}
+                {currentRound === -1 && (
+                  <div className="space-y-12">
+                    <div className="bg-slate-900 text-white p-12 rounded-[3rem] shadow-2xl text-center">
+                      <div className="text-6xl mb-6">🏁</div>
+                      <h3 className="text-4xl font-black uppercase italic tracking-tighter">Saison Terminée</h3>
+                      <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-4">Merci pour votre participation ! Consultez vos résultats.</p>
+                    </div>
+                    {currentUser?.matchId && (
+                      <div className="bg-gradient-to-br from-indigo-600 to-violet-700 p-12 rounded-[3rem] shadow-2xl text-white text-center animate-in zoom-in duration-1000">
+                        <h4 className="text-2xl font-black uppercase tracking-widest mb-8 text-indigo-200">Votre Duo de la Saison</h4>
+                        <div className="flex items-center justify-center space-x-8">
+                           <div className="text-center">
+                              <img src={currentUser.avatar} className="w-24 h-24 rounded-3xl border-4 border-white shadow-xl mx-auto mb-2" />
+                              <p className="font-black uppercase text-xs">Vous</p>
+                           </div>
+                           <div className="text-4xl font-black">+</div>
+                           {users.find(u => u.id === currentUser.matchId) && (
+                             <div className="text-center">
+                                <img src={users.find(u => u.id === currentUser.matchId)?.avatar} className="w-24 h-24 rounded-3xl border-4 border-white shadow-xl mx-auto mb-2" />
+                                <p className="font-black uppercase text-xs">{users.find(u => u.id === currentUser.matchId)?.name}</p>
+                             </div>
+                           )}
+                        </div>
+                        <div className="mt-8 pt-8 border-t border-white/10 italic font-medium">
+                          Félicitations pour ce matching haute-performance !
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {currentRound !== null && currentRound > 0 && (
                   <div className="bg-indigo-600 text-white p-6 md:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.3)] border border-indigo-400 flex flex-col md:flex-row items-center justify-between gap-6 animate-bounce">
                     <div className="flex items-center space-x-6">
                       <div className="bg-white/20 w-16 h-16 rounded-3xl flex items-center justify-center text-4xl animate-pulse">🚀</div>
@@ -396,7 +446,7 @@ const App: React.FC = () => {
                     <h2 className="text-6xl font-black text-slate-900 tracking-tighter uppercase italic">Mon Planning</h2>
                     <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">{currentUser?.name} • Session Live</p>
                    </div>
-                   {allUserMeetingsDone && (
+                   {(allUserMeetingsDone || currentRound === -1) && (
                       <Button 
                         variant="secondary" 
                         className="rounded-2xl h-16 px-10 font-black uppercase tracking-widest shadow-2xl shadow-emerald-100"
@@ -407,35 +457,37 @@ const App: React.FC = () => {
                    )}
                 </div>
                 
-                {userMeetings.length === 0 ? (
+                {userMeetings.length === 0 && currentRound !== -1 && currentRound !== 0 ? (
                   <div className="bg-white p-20 rounded-[4rem] text-center shadow-2xl shadow-indigo-500/5 border border-slate-100 flex flex-col items-center">
                     <div className="w-24 h-24 bg-slate-50 rounded-3xl flex items-center justify-center text-5xl mb-8">⏳</div>
                     <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">En attente de l'Admin</h3>
                     <p className="text-slate-400 mt-4 max-w-sm mx-auto font-medium">Les rounds vont être lancés sous peu.</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {userMeetings.sort((a,b) => a.round - b.round).map(m => {
-                      const other = getOtherParticipant(m);
-                      const isCompleted = m.status === 'completed';
-                      const isCurrent = m.round === currentRound;
-                      return (
-                        <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''} ${isCurrent ? 'ring-4 ring-indigo-500 shadow-indigo-200' : ''}`}>
-                          {isCurrent && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg">En cours</div>}
-                          <div className="flex justify-between items-start mb-8">
-                            <div className="flex flex-col"><span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span><span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span></div>
-                            <span className="text-slate-900 font-black text-2xl tracking-tighter italic">{m.scheduledTime}</span>
+                  currentRound !== -1 && currentRound !== 0 && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                      {userMeetings.sort((a,b) => a.round - b.round).map(m => {
+                        const other = getOtherParticipant(m);
+                        const isCompleted = m.status === 'completed';
+                        const isCurrent = m.round === currentRound;
+                        return (
+                          <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''} ${isCurrent ? 'ring-4 ring-indigo-500 shadow-indigo-200' : ''}`}>
+                            {isCurrent && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg">En cours</div>}
+                            <div className="flex justify-between items-start mb-8">
+                              <div className="flex flex-col"><span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span><span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span></div>
+                              <span className="text-slate-900 font-black text-2xl tracking-tighter italic">{m.scheduledTime}</span>
+                            </div>
+                            <div className="flex items-center space-x-6 mb-10">
+                              <img src={other?.avatar} className="w-24 h-24 rounded-3xl shadow-xl border-4 border-white object-cover group-hover:scale-105 transition-transform" />
+                              <div><p className="text-3xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p><p className="text-indigo-600 text-xs font-black uppercase tracking-widest mt-2">{other?.role}</p></div>
+                            </div>
+                            {!isCompleted && (<Button className={`w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase shadow-xl ${isCurrent ? 'bg-indigo-600' : 'bg-slate-900'}`} onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
+                            {isCompleted && (<div className="bg-emerald-500 text-white text-center py-5 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-100">Round Terminé ✓</div>)}
                           </div>
-                          <div className="flex items-center space-x-6 mb-10">
-                            <img src={other?.avatar} className="w-24 h-24 rounded-3xl shadow-xl border-4 border-white object-cover group-hover:scale-105 transition-transform" />
-                            <div><p className="text-3xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p><p className="text-indigo-600 text-xs font-black uppercase tracking-widest mt-2">{other?.role}</p></div>
-                          </div>
-                          {!isCompleted && (<Button className={`w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase shadow-xl ${isCurrent ? 'bg-indigo-600' : 'bg-slate-900'}`} onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
-                          {isCompleted && (<div className="bg-emerald-500 text-white text-center py-5 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-100">Round Terminé ✓</div>)}
-                        </div>
-                      )
-                    })}
-                  </div>
+                        )
+                      })}
+                    </div>
+                  )
                 )}
               </div>
             )}

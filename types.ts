@@ -26,6 +26,7 @@ export interface User {
   avatar: string;
   avgScore: number;
   connectionCode?: string;
+  matchId?: string; // ID du partenaire validé pour le palmarès final
 }
 
 export interface Rating {

@@ -460,15 +460,24 @@ const App: React.FC = () => {
                     <h2 className="text-6xl font-black text-slate-900 tracking-tighter uppercase italic">Mon Planning</h2>
                     <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">{currentUser?.name} • Session Live</p>
                    </div>
-                   {(allUserMeetingsDone || currentRound === -1) && (
+                   <div className="flex gap-4">
                       <Button 
-                        variant="secondary" 
-                        className="rounded-2xl h-16 px-10 font-black uppercase tracking-widest shadow-2xl shadow-emerald-100"
+                        variant="outline" 
+                        className="rounded-xl h-12 px-6 font-black uppercase text-[10px] tracking-widest border-slate-200"
                         onClick={() => setUserState('SYNTHESIS')}
                       >
-                        📊 Voir ma Synthèse
+                        ⚙️ Modifier mon Profil
                       </Button>
-                   )}
+                      {(allUserMeetingsDone || currentRound === -1) && (
+                        <Button 
+                          variant="secondary" 
+                          className="rounded-2xl h-16 px-10 font-black uppercase tracking-widest shadow-2xl shadow-emerald-100"
+                          onClick={() => setUserState('SYNTHESIS')}
+                        >
+                          📊 Voir ma Synthèse
+                        </Button>
+                      )}
+                   </div>
                 </div>
                 
                 {userMeetings.length === 0 && currentRound !== -1 && currentRound !== 0 ? (

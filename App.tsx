@@ -351,7 +351,7 @@ const App: React.FC = () => {
                     <h3 className="text-3xl font-black text-slate-900 mb-8 uppercase">Identification</h3>
                     <form onSubmit={handleLoginByCode} className="space-y-8">
                       <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Votre Code (ex: Jean DUPONT -> J-DUP)</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Votre Code (ex: Jean DUPONT &rarr; J-DUP)</label>
                         <input 
                           type="text" 
                           required 

@@ -22,6 +22,7 @@ const App: React.FC = () => {
   
   const [users, setUsers] = useState<User[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
+  const [currentRound, setCurrentRound] = useState<number | null>(null);
   const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,9 +38,14 @@ const App: React.FC = () => {
       setMeetings(cloudMeetings || []);
     });
 
+    const unsubscribeRound = dbService.subscribeToCurrentRound((round) => {
+      setCurrentRound(round);
+    });
+
     return () => {
       unsubscribeUsers();
       unsubscribeMeetings();
+      unsubscribeRound();
     };
   }, []);
 
@@ -70,14 +76,10 @@ const App: React.FC = () => {
   };
 
   const handleDeleteUser = async (userId: string) => {
+    if(!confirm("Supprimer définitivement ce profil ?")) return;
     setIsSyncing(true);
     try {
       await dbService.deleteUser(userId);
-      // Supprimer aussi ses matchs pour garder la cohérence
-      const userMeetings = meetings.filter(m => m.participant1Id === userId || m.participant2Id === userId);
-      for (const m of userMeetings) {
-        // Optionnel : on pourrait utiliser une fonction de suppression massive de matchs
-      }
     } finally {
       setIsSyncing(false);
     }
@@ -183,11 +185,13 @@ const App: React.FC = () => {
   };
 
   const resetAll = async () => {
+    if(!confirm("Action Irréversible : Reset complet ?")) return;
     setIsSyncing(true);
     try {
       await dbService.resetAll();
       setUsers([]);
       setMeetings([]);
+      setCurrentRound(null);
       window.location.reload();
     } finally {
       setIsSyncing(false);
@@ -286,6 +290,25 @@ const App: React.FC = () => {
             {userState === 'REGISTRATION' && <Registration onRegister={handleRegister} />}
             {userState === 'SCHEDULE' && (
               <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
+                {/* BANNIÈRE ROUND ACTIF POUR LE PARTICIPANT */}
+                {currentRound && (
+                  <div className="bg-indigo-600 text-white p-6 md:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.3)] border border-indigo-400 flex flex-col md:flex-row items-center justify-between gap-6 animate-bounce">
+                    <div className="flex items-center space-x-6">
+                      <div className="bg-white/20 w-16 h-16 rounded-3xl flex items-center justify-center text-4xl animate-pulse">🚀</div>
+                      <div>
+                        <h3 className="text-3xl font-black uppercase italic tracking-tighter">Round {currentRound} lancé !</h3>
+                        <p className="text-indigo-100 font-bold uppercase tracking-widest text-[10px]">Vérifiez votre table et rejoignez votre pair.</p>
+                      </div>
+                    </div>
+                    {userMeetings.find(m => m.round === currentRound) && (
+                      <Button variant="secondary" className="bg-white text-indigo-600 hover:bg-slate-100 h-16 px-10 rounded-2xl font-black uppercase shadow-xl" onClick={() => {
+                        const m = userMeetings.find(meet => meet.round === currentRound);
+                        if(m) startMeeting(m.id);
+                      }}>Rejoindre Table {userMeetings.find(m => m.round === currentRound)?.tableNumber}</Button>
+                    )}
+                  </div>
+                )}
+
                 <div className="flex justify-between items-end border-b border-slate-100 pb-8">
                    <div>
                     <h2 className="text-6xl font-black text-slate-900 tracking-tighter uppercase italic">Mon Planning</h2>
@@ -303,8 +326,10 @@ const App: React.FC = () => {
                     {userMeetings.sort((a,b) => a.round - b.round).map(m => {
                       const other = getOtherParticipant(m);
                       const isCompleted = m.status === 'completed';
+                      const isCurrent = m.round === currentRound;
                       return (
-                        <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''}`}>
+                        <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''} ${isCurrent ? 'ring-4 ring-indigo-500 shadow-indigo-200' : ''}`}>
+                          {isCurrent && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg">En cours</div>}
                           <div className="flex justify-between items-start mb-8">
                             <div className="flex flex-col"><span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span><span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span></div>
                             <span className="text-slate-900 font-black text-2xl tracking-tighter italic">{m.scheduledTime}</span>
@@ -313,7 +338,7 @@ const App: React.FC = () => {
                             <img src={other?.avatar} className="w-24 h-24 rounded-3xl shadow-xl border-4 border-white object-cover group-hover:scale-105 transition-transform" />
                             <div><p className="text-3xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p><p className="text-indigo-600 text-xs font-black uppercase tracking-widest mt-2">{other?.role}</p></div>
                           </div>
-                          {!isCompleted && (<Button className="w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase shadow-xl shadow-indigo-100" onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
+                          {!isCompleted && (<Button className={`w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase shadow-xl ${isCurrent ? 'bg-indigo-600' : 'bg-slate-900'}`} onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
                           {isCompleted && (<div className="bg-emerald-500 text-white text-center py-5 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-100">Round Terminé ✓</div>)}
                         </div>
                       )
@@ -332,11 +357,13 @@ const App: React.FC = () => {
             users={users} 
             meetings={meetings} 
             adminState={adminState} 
+            currentRound={currentRound}
             onUpdateUsers={handleUpdateUsers} 
             onDeleteUser={handleDeleteUser}
             onAutoMatch={() => runAutoMatch(false)} 
             onIncrementalMatch={() => runAutoMatch(true)}
             onManualMatch={(m) => dbService.updateMeeting(m.id, m)} 
+            onSetCurrentRound={(r) => dbService.setCurrentRound(r)}
             onResetAll={resetAll} 
           />
         )}

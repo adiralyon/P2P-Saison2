@@ -3,11 +3,6 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, remove } from 'firebase/database';
 import { User, Meeting } from '../types';
 
-/**
- * CONFIGURATION FIREBASE
- * Si l'application bug au démarrage, vérifiez que votre Realtime Database est bien 
- * configurée en mode 'test' (lecture/écriture publiques) ou avec les règles appropriées.
- */
 const firebaseConfig = {
   apiKey: "AIzaSyD__YfaQ0UmR5A9dx1fxIENkvXV082u6h8",
   authDomain: "p2p-adira-3ecdd.firebaseapp.com",
@@ -18,7 +13,6 @@ const firebaseConfig = {
   appId: "1:123456789:web:abcdef"
 };
 
-// Initialisation unique
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const db = getDatabase(app);
 
@@ -32,7 +26,6 @@ export const dbService = {
           const userList = Object.keys(data).map(key => ({
             ...data[key],
             id: key,
-            // Sécurité : assurer que les tableaux existent
             categories: data[key].categories || []
           }));
           callback(userList);
@@ -66,6 +59,17 @@ export const dbService = {
     });
   },
 
+  subscribeToCurrentRound: (callback: (round: number | null) => void) => {
+    const roundRef = ref(db, 'currentRound');
+    return onValue(roundRef, (snapshot) => {
+      callback(snapshot.val());
+    });
+  },
+
+  setCurrentRound: async (round: number | null) => {
+    await set(ref(db, 'currentRound'), round);
+  },
+
   saveUser: async (user: User) => {
     await set(ref(db, `users/${user.id}`), user);
   },
@@ -74,15 +78,14 @@ export const dbService = {
     await remove(ref(db, `users/${id}`));
   },
 
-  // Mise à jour groupée pour éviter les lags UI
   syncAllUsers: async (users: User[]) => {
+    // On nettoie d'abord pour être sûr de supprimer les entrées enlevées
+    await set(ref(db, 'users'), null);
     const updates: any = {};
-    // On peut soit écraser 'users', soit faire un update par clé
-    // Ici on écrase pour être raccord avec la liste locale de l'admin
-    await set(ref(db, 'users'), users.reduce((acc: any, u) => {
-      acc[u.id] = u;
-      return acc;
-    }, {}));
+    users.forEach(u => {
+      updates[`users/${u.id}`] = u;
+    });
+    await update(ref(db, '/'), updates);
   },
 
   updateUser: async (id: string, updates: Partial<User>) => {
@@ -90,7 +93,7 @@ export const dbService = {
   },
 
   saveMeetings: async (meetings: Meeting[]) => {
-    await remove(ref(db, 'meetings'));
+    await set(ref(db, 'meetings'), null);
     const updates: any = {};
     meetings.forEach(m => {
       updates[`meetings/${m.id}`] = m;
@@ -103,7 +106,10 @@ export const dbService = {
   },
 
   resetAll: async () => {
-    await set(ref(db, 'users'), null);
-    await set(ref(db, 'meetings'), null);
+    await set(ref(db, '/'), {
+        users: null,
+        meetings: null,
+        currentRound: null
+    });
   }
 };

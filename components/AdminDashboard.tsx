@@ -8,11 +8,13 @@ interface AdminDashboardProps {
   users: User[];
   meetings: Meeting[];
   adminState: AdminSubState;
+  currentRound: number | null;
   onUpdateUsers: (users: User[]) => void;
   onDeleteUser: (userId: string) => void;
   onAutoMatch: () => void;
   onIncrementalMatch: () => void;
   onManualMatch: (m: Meeting) => void;
+  onSetCurrentRound: (round: number | null) => void;
   onResetAll: () => void;
 }
 
@@ -23,11 +25,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   users = [], 
   meetings = [],
   adminState,
+  currentRound,
   onUpdateUsers,
   onDeleteUser,
   onAutoMatch,
   onIncrementalMatch,
   onManualMatch,
+  onSetCurrentRound,
   onResetAll
 }) => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -122,7 +126,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           company: row['Entreprise'] || row['Société'] || row['Company'] || 'À compléter',
           role: row['Fonction'] || row['Poste'] || row['Job'] || 'Pair',
           categories: [ProfessionalCategory.AUTRE],
-          bio: '', // Pas de texte automatique "Profil importé"
+          bio: '', 
           avatar: `https://picsum.photos/seed/${fullName}${index}/200`,
           avgScore: 0
         };
@@ -205,7 +209,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="space-y-6 md:space-y-10 animate-in fade-in duration-500 pb-20">
-      {/* Modals are the same but ensure bio is handled correctly */}
+      {/* Import Modal */}
       {showImportModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4">
           <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-12 max-w-2xl w-full">
@@ -230,6 +234,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* Add/Edit Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 overflow-y-auto">
           <div className="bg-white rounded-[3rem] shadow-2xl p-10 max-w-3xl w-full my-8">
@@ -275,7 +280,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex gap-3">
                <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={() => setShowImportModal(true)}>Import</Button>
                <Button size="sm" className="rounded-xl font-black uppercase px-8 shadow-xl" onClick={openAdd}>Ajouter</Button>
-               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6" onClick={() => { if(confirm("⚠️ Action Irréversible : Supprimer TOUS les contacts et matchs ?")) onResetAll(); }}>Reset All</Button>
+               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6" onClick={onResetAll}>Reset All</Button>
             </div>
           </div>
           <div className="overflow-x-auto overflow-y-visible">
@@ -320,7 +325,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </td>
                     <td className="px-10 py-6 text-right space-x-4">
                       <button onClick={() => openEdit(u)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all">Éditer</button>
-                      <button onClick={() => { if(confirm(`Supprimer définitivement ${u.firstName} ${u.lastName} ?`)) onDeleteUser(u.id); }} className="text-rose-500 font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 px-3 py-1.5 rounded-lg transition-all">Suppr</button>
+                      <button onClick={() => onDeleteUser(u.id)} className="text-rose-500 font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 px-3 py-1.5 rounded-lg transition-all">Suppr</button>
                     </td>
                   </tr>
                 ))}
@@ -333,16 +338,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* PLANNING TAB */}
       {adminState === 'PLANNING' && (
         <div className="space-y-12">
+          {/* BARRE DE LANCEMENT DES ROUNDS */}
+          <div className="bg-slate-900 p-8 md:p-12 rounded-[3.5rem] shadow-2xl">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-10 mb-10">
+              <div className="text-center md:text-left">
+                <h3 className="text-4xl font-black text-white uppercase italic tracking-tighter">Lancer les Rounds</h3>
+                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-3">Activez l'interface pour tous les participants</p>
+              </div>
+              {currentRound && (
+                <Button variant="danger" size="sm" className="rounded-xl px-8" onClick={() => onSetCurrentRound(null)}>Arrêter Session</Button>
+              )}
+            </div>
+            <div className="flex flex-wrap justify-center gap-4">
+              {[1, 2, 3, 4, 5, 6, 7].map(r => (
+                <button
+                  key={r}
+                  onClick={() => onSetCurrentRound(r)}
+                  className={`w-20 h-20 md:w-28 md:h-28 rounded-3xl md:rounded-[2rem] font-black text-xl md:text-3xl transition-all flex flex-col items-center justify-center border-4 ${
+                    currentRound === r 
+                      ? 'bg-indigo-600 text-white border-white shadow-[0_0_30px_rgba(79,70,229,0.5)] scale-110' 
+                      : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:border-white/20'
+                  }`}
+                >
+                  <span className="text-[10px] uppercase opacity-50 mb-1">Round</span>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="bg-white p-12 rounded-[3.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-10">
-             <div className="text-center md:text-left"><h3 className="text-5xl font-black text-slate-900 uppercase italic tracking-tighter">Pilotage Rounds</h3><p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-3">{meetings.length} matchs actifs</p></div>
+             <div className="text-center md:text-left"><h3 className="text-5xl font-black text-slate-900 uppercase italic tracking-tighter">Générateur Planning</h3><p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-3">{meetings.length} matchs actifs</p></div>
              <div className="flex flex-col sm:flex-row gap-4"><Button size="lg" className="rounded-2xl h-18 px-12 font-black uppercase" onClick={onAutoMatch}>Reset & Relancer</Button><Button variant="secondary" size="lg" className="rounded-2xl h-18 px-12 font-black uppercase" onClick={onIncrementalMatch}>Actualiser Nouveaux</Button></div>
           </div>
           <div className="grid grid-cols-1 gap-16">
             {meetingsByRound.map(([round, roundMeetings]) => (
               <div key={round} className="space-y-8">
                 <div className="flex items-center space-x-6">
-                  <div className="bg-slate-900 text-white w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl rotate-3">R{round}</div>
-                  <h4 className="text-3xl font-black text-slate-900 uppercase italic">Round {round}</h4>
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl rotate-3 transition-colors ${parseInt(round) === currentRound ? 'bg-indigo-600 text-white shadow-xl' : 'bg-slate-900 text-white'}`}>R{round}</div>
+                  <h4 className={`text-3xl font-black uppercase italic ${parseInt(round) === currentRound ? 'text-indigo-600' : 'text-slate-900'}`}>Round {round}</h4>
                   <div className="h-px bg-slate-100 flex-1"></div>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
@@ -353,29 +387,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     const statusLabel = m.status === 'completed' ? 'Fini' : (m.status === 'ongoing' ? 'En cours' : 'À lancer');
                     const color = m.status === 'completed' ? 'bg-emerald-500' : (m.status === 'ongoing' ? 'bg-amber-500' : 'bg-slate-400');
                     return (
-                      <div key={m.id} onClick={() => setSelectedMeetingId(isSelected ? null : m.id)} className={`bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative cursor-pointer hover:shadow-2xl transition-all ${isSelected ? 'ring-4 ring-indigo-500/20' : ''}`}>
+                      <div key={m.id} onClick={() => setSelectedMeetingId(isSelected ? null : m.id)} className={`bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative cursor-pointer hover:shadow-2xl transition-all ${isSelected ? 'ring-4 ring-indigo-500/20' : ''} ${parseInt(round) === currentRound ? 'ring-2 ring-indigo-500/10 bg-indigo-50/10' : ''}`}>
                         <div className="absolute top-0 right-0 px-5 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-bl-[1.5rem] tracking-widest">T{m.tableNumber}</div>
                         <div className="flex items-center justify-between mt-4">
                           <div className="text-center flex-1">
                             <img src={u1?.avatar} className="w-16 h-16 rounded-2xl object-cover shadow-md border-2 border-white mx-auto mb-2" />
-                            <p className="text-[10px] font-black text-slate-900 uppercase">{u1?.firstName} {u1?.lastName}</p>
-                            <div className="flex flex-wrap gap-1 justify-center mt-1">
-                               {u1?.categories?.slice(0,1).map(c => <span key={c} className="text-[6px] font-bold bg-indigo-50 text-indigo-600 px-1 py-0.5 rounded uppercase">{c}</span>)}
-                            </div>
+                            <p className="text-[10px] font-black text-slate-900 uppercase leading-none">{u1?.firstName}</p>
+                            <p className="text-[10px] font-black text-slate-900 uppercase">{u1?.lastName}</p>
                           </div>
                           <div className="px-4 text-[10px] font-black text-slate-200 tracking-[0.3em] rotate-90">VS</div>
                           <div className="text-center flex-1">
                             <img src={u2?.avatar} className="w-16 h-16 rounded-2xl object-cover shadow-md border-2 border-white mx-auto mb-2" />
-                            <p className="text-[10px] font-black text-slate-900 uppercase">{u2?.firstName} {u2?.lastName}</p>
-                            <div className="flex flex-wrap gap-1 justify-center mt-1">
-                               {u2?.categories?.slice(0,1).map(c => <span key={c} className="text-[6px] font-bold bg-indigo-50 text-indigo-600 px-1 py-0.5 rounded uppercase">{c}</span>)}
-                            </div>
+                            <p className="text-[10px] font-black text-slate-900 uppercase leading-none">{u2?.firstName}</p>
+                            <p className="text-[10px] font-black text-slate-900 uppercase">{u2?.lastName}</p>
                           </div>
                         </div>
                         <div className="mt-8 flex justify-center"><div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase text-white shadow-lg ${color}`}>{statusLabel}</div></div>
                         <div className={`mt-6 pt-4 border-t border-slate-50 space-y-2 transition-all ${isSelected ? 'opacity-100 max-h-40' : 'opacity-0 max-h-0 overflow-hidden'}`}>
                            <p className="text-[8px] font-black text-slate-400 uppercase text-center tracking-widest">Synergie : {m.category}</p>
-                           <p className="text-center font-black text-indigo-600 text-sm mt-2">{m.ratings?.reduce((acc, r) => acc + r.score, 0).toFixed(1) || 'Non noté'}</p>
                         </div>
                       </div>
                     );

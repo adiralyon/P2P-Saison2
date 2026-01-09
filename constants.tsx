@@ -5,7 +5,6 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u1',
     name: 'Alice Martin',
-    // Fix: Added missing required firstName and lastName properties
     firstName: 'Alice',
     lastName: 'Martin',
     company: 'DataStream Solutions',
@@ -18,7 +17,6 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u2',
     name: 'Jean Dupont',
-    // Fix: Added missing required firstName and lastName properties
     firstName: 'Jean',
     lastName: 'Dupont',
     company: 'SecurIT',
@@ -31,7 +29,6 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u3',
     name: 'Sophie Laurent',
-    // Fix: Added missing required firstName and lastName properties
     firstName: 'Sophie',
     lastName: 'Laurent',
     company: 'Global Infra',
@@ -41,10 +38,6 @@ export const MOCK_USERS: User[] = [
     avatar: 'https://picsum.photos/seed/u3/200',
     avgScore: 4.2
   }
-];
-
-export const TIME_SLOTS = [
-  "09:00", "09:15", "09:30", "09:45", "10:00", "10:15", "10:30"
 ];
 
 export const MEETING_DURATION_SECONDS = 480; // 8 minutes

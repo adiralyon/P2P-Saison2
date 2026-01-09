@@ -17,6 +17,8 @@ interface AdminDashboardProps {
   onManualMatch: (m: Meeting) => void;
   onSetCurrentRound: (round: number | null) => void;
   onResetAll: () => void;
+  onResetPlanning: () => void;
+  onResetPalmares: () => void;
 }
 
 type SortField = 'firstName' | 'lastName' | 'role' | 'company';
@@ -33,7 +35,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onIncrementalMatch,
   onManualMatch,
   onSetCurrentRound,
-  onResetAll
+  onResetAll,
+  onResetPlanning,
+  onResetPalmares
 }) => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -42,6 +46,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingExpertiseUserId, setEditingExpertiseUserId] = useState<string | null>(null);
   const expertiseMenuRef = useRef<HTMLDivElement>(null);
   
+  const [filterPlanningRound, setFilterPlanningRound] = useState<number | 'all'>('all');
+  const [filterPlanningExpertise, setFilterPlanningExpertise] = useState<ProfessionalCategory | 'all'>('all');
+  const [filterPlanningTable, setFilterPlanningTable] = useState<string>('');
+
   const [sortField, setSortField] = useState<SortField>('lastName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   
@@ -54,7 +62,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     bio: ''
   });
 
-  // Fermer le menu rapide d'expertise si on clique ailleurs
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (expertiseMenuRef.current && !expertiseMenuRef.current.contains(event.target as Node)) {
@@ -122,6 +129,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       return 0;
     });
   }, [users, sortField, sortOrder, searchQuery]);
+
+  const exportUsersToExcel = () => {
+    const exportData = users.map(u => ({
+      ID: u.id,
+      Prénom: u.firstName,
+      Nom: u.lastName,
+      Entreprise: u.company,
+      Fonction: u.role,
+      Expertises: u.categories.join(', '),
+      Code: u.connectionCode,
+      'Note Moyenne': u.avgScore.toFixed(2),
+      'Match Final ID': u.matchId || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pairs");
+    XLSX.writeFile(wb, "P2P_Pairs_Saison2.xlsx");
+  };
+
+  const exportPlanningToExcel = () => {
+    const exportData = meetings.map(m => {
+      const u1 = users.find(u => u.id === m.participant1Id);
+      const u2 = users.find(u => u.id === m.participant2Id);
+      return {
+        Round: m.round,
+        Table: m.tableNumber,
+        Catégorie: m.category,
+        'Participant 1': u1?.name || m.participant1Id,
+        'Entreprise 1': u1?.company || '',
+        'Participant 2': u2?.name || m.participant2Id,
+        'Entreprise 2': u2?.company || '',
+        Statut: m.status
+      };
+    }).sort((a, b) => a.Round - b.Round || a.Table - b.Table);
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Planning");
+    XLSX.writeFile(wb, "P2P_Planning_Saison2.xlsx");
+  };
+
+  const exportResultsToExcel = () => {
+    const exportData = potentialMatches.map(pm => ({
+      'Pair 1': pm.u1.name,
+      'Entreprise 1': pm.u1.company,
+      'Pair 2': pm.u2.name,
+      'Entreprise 2': pm.u2.company,
+      'Score Synergie (Somme)': pm.score,
+      'Moyenne (/5)': (pm.score / 2).toFixed(2),
+      'Match Validé': pm.u1.matchId === pm.u2.id ? 'OUI' : 'NON'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Matchs");
+    XLSX.writeFile(wb, "P2P_Resultats_Duos_Saison2.xlsx");
+  };
 
   const processImportData = (data: any[]) => {
     try {
@@ -228,28 +293,42 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return pairs.sort((a,b) => b.score - a.score);
   }, [meetings, users]);
 
-  const meetingsByRound = useMemo(() => {
-    const rounds: Record<number, Meeting[]> = {};
-    let filtered = meetings;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
-      filtered = filtered.filter(m => {
+  const filteredMeetings = useMemo(() => {
+    return meetings.filter(m => {
+      const roundMatch = filterPlanningRound === 'all' || m.round === filterPlanningRound;
+      const expertiseMatch = filterPlanningExpertise === 'all' || m.category === filterPlanningExpertise;
+      const tableMatch = !filterPlanningTable || m.tableNumber.toString().includes(filterPlanningTable);
+      
+      let searchMatch = true;
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
         const u1 = users.find(u => u.id === m.participant1Id);
         const u2 = users.find(u => u.id === m.participant2Id);
-        return u1?.name.toLowerCase().includes(q) || u2?.name.toLowerCase().includes(q);
-      });
-    }
-    filtered.forEach(m => {
+        searchMatch = (u1?.name.toLowerCase().includes(q) || u2?.name.toLowerCase().includes(q));
+      }
+
+      return roundMatch && expertiseMatch && tableMatch && searchMatch;
+    });
+  }, [meetings, filterPlanningRound, filterPlanningExpertise, filterPlanningTable, searchQuery, users]);
+
+  const meetingsByRound = useMemo(() => {
+    const rounds: Record<number, Meeting[]> = {};
+    
+    filteredMeetings.forEach(m => {
       if (!rounds[m.round]) rounds[m.round] = [];
       rounds[m.round].push(m);
     });
+
+    Object.keys(rounds).forEach(r => {
+      rounds[parseInt(r)].sort((a, b) => a.tableNumber - b.tableNumber);
+    });
+
     return Object.entries(rounds).sort(([a], [b]) => parseInt(a) - parseInt(b));
-  }, [meetings, searchQuery, users]);
+  }, [filteredMeetings]);
 
   return (
     <div className="space-y-6 md:space-y-10 animate-in fade-in duration-500 pb-20">
       
-      {/* BARRE DE RECHERCHE */}
       <div className="sticky top-[80px] z-40 bg-white/80 backdrop-blur-md p-4 border-b border-slate-100 rounded-2xl shadow-sm">
         <div className="max-w-xl mx-auto relative group">
           <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors">🔍</span>
@@ -263,15 +342,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       </div>
 
-      {/* ONGLET PAIRS */}
       {adminState === 'PROFILES' && (
         <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden">
           <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center bg-slate-50/30 gap-6">
             <div><h3 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Les Pairs</h3><p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-2">{filteredAndSortedUsers.length} profils actifs</p></div>
             <div className="flex flex-wrap gap-3">
                <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={() => setShowImportModal(true)}>📁 Import Excel</Button>
+               <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={exportUsersToExcel}>📤 Exporter (.xlsx)</Button>
                <Button size="sm" className="rounded-xl font-black uppercase px-8 shadow-xl" onClick={openAdd}>➕ Ajouter Manuel</Button>
-               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6" onClick={onResetAll}>⚠️ Reset All</Button>
+               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6 shadow-lg shadow-rose-100" onClick={onResetAll}>⚠️ Reset Tout (Global)</Button>
             </div>
           </div>
           <div className="overflow-x-auto min-h-[400px]">
@@ -307,7 +386,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         )}
                       </div>
                       
-                      {/* Menu Rapide Expertises */}
                       {editingExpertiseUserId === u.id && (
                         <div 
                           ref={expertiseMenuRef}
@@ -345,10 +423,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* ONGLET PLANNING */}
       {adminState === 'PLANNING' && (
         <div className="space-y-12">
-          {/* PILOTAGE SESSION */}
           <div className="bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl text-center">
             <h3 className="text-4xl font-black text-white uppercase italic tracking-tighter mb-10">Pilotage Live</h3>
             <div className="flex flex-wrap justify-center gap-6">
@@ -378,55 +454,110 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
           </div>
 
-          <div className="bg-white p-12 rounded-[3.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-10">
-             <div className="text-center md:text-left"><h3 className="text-4xl font-black uppercase italic tracking-tighter">Générateur Planning</h3><p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">{meetings.length} créneaux programmés</p></div>
-             <div className="flex flex-col sm:flex-row gap-4">
-               <Button className="h-16 px-10 rounded-2xl font-black uppercase" onClick={onAutoMatch}>Reset & Relancer Tout</Button>
-               <Button variant="secondary" className="h-16 px-10 rounded-2xl font-black uppercase" onClick={onIncrementalMatch}>Actualiser Nouveaux</Button>
-             </div>
+          <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-8">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-6">
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Filtres Planning</h4>
+              <div className="flex flex-wrap gap-2">
+                 <Button variant="secondary" size="sm" className="rounded-xl h-12 font-black uppercase" onClick={onAutoMatch}>Reset & Tout Relancer</Button>
+                 <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase" onClick={onIncrementalMatch}>Matching Nouveaux</Button>
+                 <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase" onClick={exportPlanningToExcel}>📤 Exporter Planning</Button>
+                 <Button variant="danger" size="sm" className="rounded-xl h-12 font-black uppercase" onClick={onResetPlanning}>🗑 Vider Planning</Button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-6 items-end">
+              <div className="space-y-2">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Afficher Round</label>
+                <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
+                  <button onClick={() => setFilterPlanningRound('all')} className={`px-4 py-1.5 text-[10px] font-black rounded-lg transition-all ${filterPlanningRound === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-200'}`}>Tous</button>
+                  {[1,2,3,4,5,6,7].map(r => (
+                    <button key={r} onClick={() => setFilterPlanningRound(r)} className={`px-4 py-1.5 text-[10px] font-black rounded-lg transition-all ${filterPlanningRound === r ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-200'}`}>{r}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Table n°</label>
+                <input 
+                  type="number" 
+                  placeholder="Ex: 5"
+                  className="h-10 w-24 bg-slate-50 border border-slate-100 rounded-xl px-4 text-xs font-bold outline-none focus:border-indigo-600"
+                  value={filterPlanningTable}
+                  onChange={(e) => setFilterPlanningTable(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2 flex-1 min-w-[200px]">
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Filtrer Synergie</label>
+                <select 
+                  className="w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-4 text-[10px] font-black uppercase outline-none focus:border-indigo-600"
+                  value={filterPlanningExpertise}
+                  onChange={(e) => setFilterPlanningExpertise(e.target.value as any)}
+                >
+                  <option value="all">Toutes les expertises</option>
+                  {Object.values(ProfessionalCategory).map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button 
+                onClick={() => { setFilterPlanningRound('all'); setFilterPlanningExpertise('all'); setFilterPlanningTable(''); setSearchQuery(''); }}
+                className="h-10 px-4 text-[8px] font-black text-rose-500 uppercase hover:bg-rose-50 rounded-xl transition-all"
+              >
+                Effacer Filtres
+              </button>
+            </div>
           </div>
 
           <div className="space-y-16">
-            {meetingsByRound.map(([round, roundMeetings]) => (
-              <div key={round} className="space-y-8">
-                <div className="flex items-center space-x-6">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl ${parseInt(round) === currentRound ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-900 text-white'}`}>R{round}</div>
-                  <h4 className={`text-2xl font-black uppercase italic ${parseInt(round) === currentRound ? 'text-indigo-600' : 'text-slate-900'}`}>Round {round}</h4>
-                  <div className="h-px bg-slate-100 flex-1"></div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  {roundMeetings.map(m => {
-                    const u1 = users.find(u => u.id === m.participant1Id);
-                    const u2 = users.find(u => u.id === m.participant2Id);
-                    return (
-                      <div key={m.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm relative group hover:shadow-xl transition-all">
-                         <div className="absolute top-0 right-0 px-3 py-1.5 bg-slate-900 text-white text-[8px] font-black uppercase rounded-bl-xl tracking-widest">T{m.tableNumber}</div>
-                         <div className="flex items-center justify-between mt-2">
-                           <div className="text-center flex-1">
-                             <img src={u1?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
-                             <p className="text-[7px] font-black uppercase truncate">{u1?.name}</p>
-                           </div>
-                           <div className="px-2 font-black text-slate-100 text-[8px]">VS</div>
-                           <div className="text-center flex-1">
-                             <img src={u2?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
-                             <p className="text-[7px] font-black uppercase truncate">{u2?.name}</p>
-                           </div>
+            {meetingsByRound.length === 0 ? (
+              <div className="p-20 text-center flex flex-col items-center">
+                <span className="text-5xl mb-6 opacity-20">📭</span>
+                <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Aucun match ne correspond aux filtres actuels.</p>
+              </div>
+            ) : (
+              meetingsByRound.map(([round, roundMeetings]) => (
+                <div key={round} className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                  <div className="flex items-center space-x-6">
+                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl ${parseInt(round) === currentRound ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-900 text-white'}`}>R{round}</div>
+                    <h4 className={`text-2xl font-black uppercase italic ${parseInt(round) === currentRound ? 'text-indigo-600' : 'text-slate-900'}`}>Round {round}</h4>
+                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{roundMeetings.length} matchs</span>
+                    <div className="h-px bg-slate-100 flex-1"></div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {roundMeetings.map(m => {
+                      const u1 = users.find(u => u.id === m.participant1Id);
+                      const u2 = users.find(u => u.id === m.participant2Id);
+                      return (
+                        <div key={m.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm relative group hover:shadow-xl transition-all">
+                           <div className="absolute top-0 right-0 px-3 py-1.5 bg-slate-900 text-white text-[8px] font-black uppercase rounded-bl-xl tracking-widest">T{m.tableNumber}</div>
+                           <div className="flex items-center justify-between mt-2">
+                             <div className="text-center flex-1">
+                               <img src={u1?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
+                               <p className="text-[7px] font-black uppercase truncate">{u1?.name}</p>
+                             </div>
+                             <div className="px-2 font-black text-slate-100 text-[8px]">&rarr;</div>
+                             <div className="text-center flex-1">
+                               <img src={u2?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
+                               <p className="text-[7px] font-black uppercase truncate">{u2?.name}</p>
+                             </div>
                          </div>
                          <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
-                            <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{m.category}</span>
-                            <div className={`w-2 h-2 rounded-full ${m.status === 'completed' ? 'bg-emerald-500' : m.status === 'ongoing' ? 'bg-amber-500' : 'bg-slate-200'}`}></div>
+                            <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest truncate max-w-[120px]">{m.category}</span>
+                            <div className={`w-2 h-2 rounded-full ${m.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : m.status === 'ongoing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-slate-200'}`}></div>
                          </div>
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       )}
 
-      {/* ONGLET BILANS / MATCHS */}
       {adminState === 'RESULTS' && (
         <div className="space-y-12">
           <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 p-12 rounded-[3.5rem] text-white shadow-2xl relative overflow-hidden">
@@ -438,7 +569,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div className="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden min-h-[500px]">
             <div className="p-10 border-b border-slate-50 flex justify-between items-center bg-slate-50/20">
               <div><h4 className="text-3xl font-black uppercase italic tracking-tight">Matchs & Alliances</h4><p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-2">{potentialMatches.length} alliances potentielles détectées</p></div>
-              <p className="text-indigo-600 font-black text-xs uppercase italic">Mode de sélection manuelle</p>
+              <div className="flex gap-4">
+                <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase" onClick={exportResultsToExcel}>📤 Exporter Matchs</Button>
+                <Button variant="danger" size="sm" className="rounded-xl h-12 font-black uppercase" onClick={onResetPalmares}>🗑 Reset Palmarès</Button>
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left">
@@ -506,7 +640,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* MODALE D'AJOUT / ÉDITION */}
       {showAddModal && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white rounded-[3.5rem] w-full max-w-2xl p-14 shadow-2xl animate-in zoom-in-95 duration-300">
@@ -561,7 +694,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
-      {/* MODALE IMPORT EXCEL */}
       {showImportModal && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6">
           <div className="bg-white rounded-[3.5rem] w-full max-w-xl p-16 shadow-2xl animate-in zoom-in-95 duration-300 text-center">
@@ -572,11 +704,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               type="file" 
               accept=".xlsx, .xls" 
               className="hidden" 
-              id="excel-up-admin" 
+              id="excel-up-admin-final-v3" 
               onChange={handleExcelImport} 
             />
             <label 
-              htmlFor="excel-up-admin" 
+              htmlFor="excel-up-admin-final-v3" 
               className="block w-full py-14 border-4 border-dashed border-slate-100 rounded-[3rem] cursor-pointer hover:border-indigo-600 hover:bg-indigo-50 transition-all font-black text-slate-300 hover:text-indigo-600 uppercase tracking-[0.3em] mb-10"
             >
               Cliquer pour parcourir

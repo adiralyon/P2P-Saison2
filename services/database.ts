@@ -1,6 +1,6 @@
 
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, update, remove } from 'firebase/database';
+import { getDatabase, ref, onValue, set, update, remove, get } from 'firebase/database';
 import { User, Meeting } from '../types';
 
 const firebaseConfig = {
@@ -79,7 +79,6 @@ export const dbService = {
   },
 
   syncAllUsers: async (users: User[]) => {
-    // On nettoie d'abord pour être sûr de supprimer les entrées enlevées
     await set(ref(db, 'users'), null);
     const updates: any = {};
     users.forEach(u => {
@@ -93,7 +92,7 @@ export const dbService = {
   },
 
   saveMeetings: async (meetings: Meeting[]) => {
-    await set(ref(db, 'meetings'), null);
+    await remove(ref(db, 'meetings'));
     const updates: any = {};
     meetings.forEach(m => {
       updates[`meetings/${m.id}`] = m;
@@ -105,11 +104,26 @@ export const dbService = {
     await update(ref(db, `meetings/${id}`), updates);
   },
 
+  resetPlanning: async () => {
+    await remove(ref(db, 'meetings'));
+  },
+
+  resetPalmares: async () => {
+    const usersRef = ref(db, 'users');
+    const snapshot = await get(usersRef);
+    const users = snapshot.val();
+    if (users) {
+      const updates: any = {};
+      Object.keys(users).forEach(id => {
+        updates[`users/${id}/matchId`] = null;
+      });
+      await update(ref(db, '/'), updates);
+    }
+  },
+
   resetAll: async () => {
-    await set(ref(db, '/'), {
-        users: null,
-        meetings: null,
-        currentRound: null
-    });
+    await remove(ref(db, 'users'));
+    await remove(ref(db, 'meetings'));
+    await set(ref(db, 'currentRound'), null);
   }
 };

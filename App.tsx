@@ -1,7 +1,6 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { AppMode, User, Meeting, Rating, ProfessionalCategory, UserSubState, AdminSubState } from './types';
-import { TIME_SLOTS } from './constants';
 import { Button } from './components/Button';
 import { Registration } from './components/Registration';
 import { MeetingRoom } from './components/MeetingRoom';
@@ -55,7 +54,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Sync currentUser to catch real-time matchId updates
   useEffect(() => {
     if (currentUser) {
       const updated = users.find(u => u.id === currentUser.id);
@@ -165,7 +163,7 @@ const App: React.FC = () => {
               participant1Id: pair.u1.id,
               participant2Id: pair.u2.id,
               tableNumber: roundTableCounters[round]++,
-              scheduledTime: TIME_SLOTS[round - 1] || "À venir",
+              scheduledTime: "", 
               round: round,
               category: pair.category,
               status: 'scheduled',
@@ -219,14 +217,32 @@ const App: React.FC = () => {
   };
 
   const resetAll = async () => {
-    if(!confirm("Action Irréversible : Reset complet ?")) return;
+    if(!confirm("Action Irréversible : Reset complet (Pairs + Rounds + Bilans) ?")) return;
     setIsSyncing(true);
     try {
       await dbService.resetAll();
-      setUsers([]);
-      setMeetings([]);
-      setCurrentRound(null);
       window.location.reload();
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const resetPlanning = async () => {
+    if(!confirm("Réinitialiser uniquement le planning des rounds ? (Les participants seront conservés)")) return;
+    setIsSyncing(true);
+    try {
+      await dbService.resetPlanning();
+      await dbService.setCurrentRound(null);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  const resetPalmares = async () => {
+    if(!confirm("Réinitialiser les duos validés ? (Les notes et rounds sont conservés)")) return;
+    setIsSyncing(true);
+    try {
+      await dbService.resetPalmares();
     } finally {
       setIsSyncing(false);
     }
@@ -382,7 +398,6 @@ const App: React.FC = () => {
             {userState === 'SCHEDULE' && (
               <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
                 
-                {/* ETAT PAUSE */}
                 {currentRound === 0 && (
                   <div className="bg-amber-500 text-white p-12 rounded-[3rem] shadow-2xl text-center flex flex-col items-center">
                     <div className="text-6xl mb-6">☕️</div>
@@ -391,7 +406,6 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                {/* ETAT FIN / CLÔTURE */}
                 {currentRound === -1 && (
                   <div className="space-y-12">
                     <div className="bg-slate-900 text-white p-12 rounded-[3rem] shadow-2xl text-center">
@@ -474,8 +488,10 @@ const App: React.FC = () => {
                           <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''} ${isCurrent ? 'ring-4 ring-indigo-500 shadow-indigo-200' : ''}`}>
                             {isCurrent && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg">En cours</div>}
                             <div className="flex justify-between items-start mb-8">
-                              <div className="flex flex-col"><span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span><span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span></div>
-                              <span className="text-slate-900 font-black text-2xl tracking-tighter italic">{m.scheduledTime}</span>
+                              <div className="flex flex-col">
+                                <span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span>
+                                <span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span>
+                              </div>
                             </div>
                             <div className="flex items-center space-x-6 mb-10">
                               <img src={other?.avatar} className="w-24 h-24 rounded-3xl shadow-xl border-4 border-white object-cover group-hover:scale-105 transition-transform" />
@@ -510,6 +526,8 @@ const App: React.FC = () => {
             onManualMatch={(m) => dbService.updateMeeting(m.id, m)} 
             onSetCurrentRound={(r) => dbService.setCurrentRound(r)}
             onResetAll={resetAll} 
+            onResetPlanning={resetPlanning}
+            onResetPalmares={resetPalmares}
           />
         )}
       </main>

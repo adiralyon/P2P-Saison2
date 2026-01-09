@@ -25,7 +25,7 @@ export interface User {
   bio: string;
   avatar: string;
   avgScore: number;
-  connectionCode?: string; // Nouveau champ pour le code de connexion
+  connectionCode?: string;
 }
 
 export interface Rating {
@@ -50,5 +50,5 @@ export interface Meeting {
 }
 
 export type AppMode = 'PORTAL_SELECT' | 'USER_PORTAL' | 'ADMIN_PORTAL';
-export type UserSubState = 'REGISTRATION' | 'SCHEDULE' | 'ACTIVE_MEETING' | 'SCORING';
+export type UserSubState = 'REGISTRATION' | 'SCHEDULE' | 'ACTIVE_MEETING' | 'SCORING' | 'SYNTHESIS';
 export type AdminSubState = 'PROFILES' | 'PLANNING' | 'RESULTS';

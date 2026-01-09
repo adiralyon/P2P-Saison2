@@ -6,6 +6,7 @@ import { Button } from './components/Button';
 import { Registration } from './components/Registration';
 import { MeetingRoom } from './components/MeetingRoom';
 import { Scoring } from './components/Scoring';
+import { Synthesis } from './components/Synthesis';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminAuth } from './components/AdminAuth';
 import { dbService } from './services/database';
@@ -61,7 +62,6 @@ const App: React.FC = () => {
       if (exists) {
         setCurrentUser(exists);
       } else {
-        // Génération d'un code de connexion manuel
         const code = newUser.lastName.slice(0, 4).toUpperCase().padEnd(4, 'X');
         const userToSave = { ...newUser, connectionCode: code };
         await dbService.saveUser(userToSave);
@@ -223,6 +223,11 @@ const App: React.FC = () => {
     return (meetings || []).filter(m => m.participant1Id === currentUser.id || m.participant2Id === currentUser.id);
   }, [meetings, currentUser]);
 
+  const allUserMeetingsDone = useMemo(() => {
+    if (userMeetings.length === 0) return false;
+    return userMeetings.every(m => m.status === 'completed');
+  }, [userMeetings]);
+
   const getOtherParticipant = (m: Meeting) => {
     const otherId = m.participant1Id === currentUser?.id ? m.participant2Id : m.participant1Id;
     return users.find(u => u.id === otherId);
@@ -379,12 +384,22 @@ const App: React.FC = () => {
                   </div>
                 )}
 
-                <div className="flex justify-between items-end border-b border-slate-100 pb-8">
-                   <div>
+                <div className="flex flex-col md:flex-row justify-between items-center border-b border-slate-100 pb-8 gap-6">
+                   <div className="text-center md:text-left">
                     <h2 className="text-6xl font-black text-slate-900 tracking-tighter uppercase italic">Mon Planning</h2>
                     <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">{currentUser?.name} • Session Live</p>
                    </div>
+                   {allUserMeetingsDone && (
+                      <Button 
+                        variant="secondary" 
+                        className="rounded-2xl h-16 px-10 font-black uppercase tracking-widest shadow-2xl shadow-emerald-100"
+                        onClick={() => setUserState('SYNTHESIS')}
+                      >
+                        📊 Voir ma Synthèse
+                      </Button>
+                   )}
                 </div>
+                
                 {userMeetings.length === 0 ? (
                   <div className="bg-white p-20 rounded-[4rem] text-center shadow-2xl shadow-indigo-500/5 border border-slate-100 flex flex-col items-center">
                     <div className="w-24 h-24 bg-slate-50 rounded-3xl flex items-center justify-center text-5xl mb-8">⏳</div>
@@ -419,6 +434,7 @@ const App: React.FC = () => {
             )}
             {userState === 'ACTIVE_MEETING' && activeMeetingId && currentUser && (<MeetingRoom meeting={meetings.find(m => m.id === activeMeetingId)!} participant={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} currentUser={currentUser} onFinish={finishMeeting} />)}
             {userState === 'SCORING' && activeMeetingId && currentUser && (<Scoring meetingId={activeMeetingId} meetingUser={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} currentUser={currentUser} onSubmit={submitRating} />)}
+            {userState === 'SYNTHESIS' && currentUser && (<Synthesis currentUser={currentUser} meetings={meetings} users={users} onBack={() => setUserState('SCHEDULE')} />)}
           </>
         )}
 

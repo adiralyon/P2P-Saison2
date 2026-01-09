@@ -143,7 +143,6 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
         </p>
       </div>
 
-      {/* SECTION CARTE PROFIL */}
       <div className="bg-slate-900 rounded-[3rem] p-8 md:p-12 text-white shadow-2xl relative overflow-hidden group">
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl group-hover:bg-white/10 transition-all duration-700"></div>
         
@@ -171,8 +170,6 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
                 </button>
               </div>
             </div>
-
-            {/* Score global retiré ici */}
           </div>
         ) : (
           <form onSubmit={handleSaveProfile} className="relative z-10 space-y-8 animate-in fade-in duration-300">

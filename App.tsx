@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { AppMode, User, Meeting, Rating, ProfessionalCategory, UserSubState, AdminSubState } from './types';
 import { Button } from './components/Button';
 import { Registration } from './components/Registration';
@@ -11,6 +11,42 @@ import { AdminAuth } from './components/AdminAuth';
 import { dbService } from './services/database';
 
 type UserEntryMode = 'choice' | 'register' | 'login';
+
+// Utilitaire pour les alertes sonores sans fichier externe
+const playNotificationSound = (type: 'start' | 'pause' | 'end') => {
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) return;
+  
+  const ctx = new AudioContextClass();
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+
+  osc.connect(gain);
+  gain.connect(ctx.destination);
+
+  const now = ctx.currentTime;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.1, now + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
+
+  if (type === 'start') {
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(523.25, now); // C5
+    osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
+    osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.3); // G5
+  } else if (type === 'pause') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(392.00, now); // G4
+    osc.frequency.exponentialRampToValueAtTime(329.63, now + 0.2); // E4
+  } else {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(440, now); // A4
+    osc.frequency.exponentialRampToValueAtTime(880, now + 0.1); // A5
+  }
+
+  osc.start(now);
+  osc.stop(now + 0.8);
+};
 
 const App: React.FC = () => {
   const [appMode, setAppMode] = useState<AppMode>('PORTAL_SELECT');
@@ -29,6 +65,8 @@ const App: React.FC = () => {
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [currentRound, setCurrentRound] = useState<number | null>(null);
   const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
+
+  const prevRoundRef = useRef<number | null>(null);
 
   useEffect(() => {
     let timeout = setTimeout(() => setIsLoading(false), 5000); 
@@ -53,6 +91,16 @@ const App: React.FC = () => {
       unsubscribeRound();
     };
   }, []);
+
+  // Gestion des alertes sonores lors du changement de round
+  useEffect(() => {
+    if (prevRoundRef.current !== currentRound && currentRound !== null && currentUser) {
+      if (currentRound > 0) playNotificationSound('start');
+      else if (currentRound === 0) playNotificationSound('pause');
+      else if (currentRound === -1) playNotificationSound('end');
+    }
+    prevRoundRef.current = currentRound;
+  }, [currentRound, currentUser]);
 
   useEffect(() => {
     if (currentUser) {
@@ -96,6 +144,16 @@ const App: React.FC = () => {
       setLoginError(true);
       setTimeout(() => setLoginError(false), 2000);
     }
+  };
+
+  const handleLogout = () => {
+    setAppMode('PORTAL_SELECT');
+    setUserState('REGISTRATION');
+    setUserEntryMode('choice');
+    setCurrentUser(null);
+    setIsAdminAuthenticated(false);
+    setLoginCode('');
+    setLoginError(false);
   };
 
   const handleUpdateUsers = async (newList: User[]) => {
@@ -305,37 +363,53 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] flex flex-col">
-      <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-8 py-5 flex justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => { setAppMode('PORTAL_SELECT'); setCurrentUser(null); }}>
+      <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-4 md:px-8 py-4 flex justify-between items-center sticky top-0 z-50">
+        <div className="flex items-center space-x-3 cursor-pointer group" onClick={handleLogout}>
           <div className="bg-indigo-600 w-10 h-10 rounded-xl text-white font-black flex items-center justify-center shadow-lg text-sm group-hover:rotate-12 transition-transform">P2P</div>
           <div className="flex flex-col leading-none">
-            <span className="font-black text-2xl text-slate-900 tracking-tighter italic uppercase">Saison 2</span>
+            <span className="font-black text-xl md:text-2xl text-slate-900 tracking-tighter italic uppercase">Saison 2</span>
             <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">{isSyncing ? 'Sync...' : 'Online'}</span>
           </div>
         </div>
-        <div className="flex items-center space-x-4">
+        
+        <div className="flex items-center space-x-2 md:space-x-4">
           {appMode === 'ADMIN_PORTAL' ? (
             <div className="bg-slate-100 p-1 rounded-2xl flex space-x-1">
-              <button className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${adminState === 'PROFILES' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`} onClick={() => setAdminState('PROFILES')}>Pairs</button>
-              <button className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${adminState === 'PLANNING' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`} onClick={() => setAdminState('PLANNING')}>Rounds</button>
-              <button className={`px-5 py-2 text-xs font-bold rounded-xl transition-all ${adminState === 'RESULTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`} onClick={() => setAdminState('RESULTS')}>Bilans</button>
+              <button className={`px-3 md:px-5 py-2 text-[10px] md:text-xs font-bold rounded-xl transition-all ${adminState === 'PROFILES' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`} onClick={() => setAdminState('PROFILES')}>Pairs</button>
+              <button className={`px-3 md:px-5 py-2 text-[10px] md:text-xs font-bold rounded-xl transition-all ${adminState === 'PLANNING' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`} onClick={() => setAdminState('PLANNING')}>Rounds</button>
+              <button className={`px-3 md:px-5 py-2 text-[10px] md:text-xs font-bold rounded-xl transition-all ${adminState === 'RESULTS' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-500 hover:bg-slate-200'}`} onClick={() => setAdminState('RESULTS')}>Bilans</button>
             </div>
           ) : (
             currentUser && (
-               <div className="flex items-center space-x-3 bg-indigo-50 px-3 py-1.5 rounded-2xl border border-indigo-100">
-                 <div className="text-right hidden sm:block">
-                   <p className="text-xs font-black text-slate-900">{currentUser.name}</p>
-                   <p className="text-[8px] text-indigo-500 font-bold uppercase tracking-widest">{currentUser.company}</p>
+               <div className="flex items-center space-x-2 md:space-x-3">
+                 <button 
+                  onClick={() => setUserState('SYNTHESIS')}
+                  className="bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                 >
+                   ⚙️ Profil
+                 </button>
+                 <div className="flex items-center space-x-2 bg-slate-50 px-2 py-1 rounded-2xl border border-slate-200">
+                    <div className="text-right hidden sm:block">
+                      <p className="text-[10px] font-black text-slate-900">{currentUser.name}</p>
+                      <p className="text-[7px] text-indigo-500 font-bold uppercase tracking-widest">{currentUser.company}</p>
+                    </div>
+                    <img src={currentUser.avatar} className="w-8 h-8 rounded-lg border-2 border-white shadow-sm" />
                  </div>
-                 <img src={currentUser.avatar} className="w-10 h-10 rounded-xl border-2 border-white shadow-md" />
                </div>
             )
           )}
-          <Button variant="outline" size="sm" className="rounded-xl font-bold text-[10px] uppercase tracking-widest border-slate-200" onClick={() => { setAppMode('PORTAL_SELECT'); setIsAdminAuthenticated(false); setCurrentUser(null); }}>Sortie</Button>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="rounded-xl font-bold text-[10px] uppercase tracking-widest border-slate-200 h-9" 
+            onClick={handleLogout}
+          >
+            Sortie
+          </Button>
         </div>
       </header>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8">
         {appMode === 'USER_PORTAL' && (
           <>
             {userState === 'REGISTRATION' && (
@@ -461,13 +535,6 @@ const App: React.FC = () => {
                     <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">{currentUser?.name} • Session Live</p>
                    </div>
                    <div className="flex gap-4">
-                      <Button 
-                        variant="outline" 
-                        className="rounded-xl h-12 px-6 font-black uppercase text-[10px] tracking-widest border-slate-200"
-                        onClick={() => setUserState('SYNTHESIS')}
-                      >
-                        ⚙️ Modifier mon Profil
-                      </Button>
                       {(allUserMeetingsDone || currentRound === -1) && (
                         <Button 
                           variant="secondary" 

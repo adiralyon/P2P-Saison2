@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, Meeting, ProfessionalCategory, AdminSubState } from '../types';
 import { Button } from './Button';
 import * as XLSX from 'xlsx';
@@ -32,9 +32,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
+  const [editingExpertiseUserId, setEditingExpertiseUserId] = useState<string | null>(null);
   const [importText, setImportText] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editExpertiseRef = useRef<HTMLDivElement>(null);
   
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterRound, setFilterRound] = useState<string>('all');
@@ -50,6 +52,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     categories: [ProfessionalCategory.DSI],
     bio: ''
   });
+
+  // Gestion du clic extérieur pour fermer l'édition inline des expertises
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (editExpertiseRef.current && !editExpertiseRef.current.contains(event.target as Node)) {
+        setEditingExpertiseUserId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const openAdd = () => {
     setFormData({ 
@@ -116,7 +129,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           company: row['Entreprise'] || row['Société'] || row['Company'] || 'À compléter',
           role: row['Fonction'] || row['Poste'] || row['Job'] || 'Pair',
           categories: [ProfessionalCategory.AUTRE],
-          bio: row['Bio'] || 'Profil importé.',
+          bio: '', // Plus de message par défaut comme demandé
           avatar: `https://picsum.photos/seed/${fullName}${index}/200`,
           avgScore: 0
         };
@@ -159,6 +172,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     setEditingUser(null);
     setShowAddModal(false);
+  };
+
+  const toggleInlineExpertise = (userId: string, category: ProfessionalCategory) => {
+    const updatedUsers = users.map(u => {
+      if (u.id === userId) {
+        const cats = u.categories || [];
+        const newCats = cats.includes(category) 
+          ? cats.filter(c => c !== category) 
+          : [...cats, category];
+        return { ...u, categories: newCats };
+      }
+      return u;
+    });
+    onUpdateUsers(updatedUsers);
   };
 
   const meetingsByRound = useMemo(() => {
@@ -265,7 +292,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* PROFILES TAB */}
       {adminState === 'PROFILES' && (
-        <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden">
+        <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden min-h-[600px]">
           <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-50/30">
             <div>
               <h3 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Les Pairs</h3>
@@ -274,10 +301,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div className="flex gap-3">
                <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={() => setShowImportModal(true)}>Import</Button>
                <Button size="sm" className="rounded-xl font-black uppercase px-8 shadow-xl" onClick={openAdd}>Ajouter</Button>
-               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6" onClick={() => { if(confirm("Supprimer TOUS les contacts et matchs ?")) onResetAll(); }}>Reset All</Button>
+               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6" onClick={() => { if(confirm("⚠️ Action Irréversible : Supprimer TOUS les contacts et matchs ?")) onResetAll(); }}>Reset All</Button>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="w-full text-left">
               <thead className="bg-slate-50/50">
                 <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
@@ -291,21 +318,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {sortedUsers.map(u => (
-                  <tr key={u.id} className="hover:bg-indigo-50/20 transition-colors group">
+                  <tr key={u.id} className="hover:bg-indigo-50/10 transition-colors group">
                     <td className="px-10 py-6 font-bold text-slate-900">{u.firstName}</td>
                     <td className="px-10 py-6 font-black text-slate-900 uppercase tracking-tight">{u.lastName}</td>
                     <td className="px-10 py-6 text-sm font-medium text-slate-600">{u.role}</td>
                     <td className="px-10 py-6 text-sm font-bold text-indigo-600">{u.company}</td>
-                    <td className="px-10 py-6">
-                      <div className="flex flex-wrap gap-1">
-                        {(u.categories || []).map(cat => (
-                          <span key={cat} className="text-[7px] font-black text-indigo-700 bg-white px-2 py-1 rounded-full border border-indigo-100 uppercase">{cat}</span>
-                        ))}
+                    <td className="px-10 py-6 relative">
+                      <div 
+                        className={`flex flex-wrap gap-1 cursor-pointer p-2 rounded-xl transition-all ${editingExpertiseUserId === u.id ? 'bg-white ring-4 ring-indigo-500/10 shadow-lg' : 'hover:bg-indigo-50'}`}
+                        onClick={() => setEditingExpertiseUserId(u.id)}
+                      >
+                        {(u.categories || []).length > 0 ? (
+                           u.categories.map(cat => (
+                            <span key={cat} className="text-[7px] font-black text-indigo-700 bg-indigo-50 px-2 py-1 rounded-full border border-indigo-100 uppercase">{cat}</span>
+                           ))
+                        ) : (
+                          <span className="text-[7px] font-bold text-slate-300 uppercase tracking-widest italic">Aucune</span>
+                        )}
+                        {editingExpertiseUserId === u.id && (
+                          <div ref={editExpertiseRef} className="absolute left-0 top-full mt-2 z-[150] w-[300px] bg-white border border-slate-200 shadow-2xl rounded-3xl p-6 animate-in zoom-in-95 slide-in-from-top-2">
+                             <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Modifier Expertises</h4>
+                             <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                                {Object.values(ProfessionalCategory).map(cat => (
+                                  <label key={cat} className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
+                                    <span className={`text-[10px] font-bold ${u.categories.includes(cat) ? 'text-indigo-600' : 'text-slate-500'}`}>{cat}</span>
+                                    <input 
+                                      type="checkbox" 
+                                      className="w-4 h-4 rounded text-indigo-600" 
+                                      checked={u.categories.includes(cat)} 
+                                      onChange={() => toggleInlineExpertise(u.id, cat)}
+                                    />
+                                  </label>
+                                ))}
+                             </div>
+                             <div className="mt-4 pt-4 border-t border-slate-50 flex justify-end">
+                                <button onClick={() => setEditingExpertiseUserId(null)} className="text-[9px] font-black text-indigo-600 uppercase tracking-widest hover:underline">Terminer</button>
+                             </div>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="px-10 py-6 text-right space-x-4">
-                      <button onClick={() => openEdit(u)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest">Éditer</button>
-                      <button onClick={() => { if(confirm("Supprimer ce profil ?")) onUpdateUsers(users.filter(user => user.id !== u.id)); }} className="text-rose-500 font-black text-[10px] uppercase tracking-widest">Suppr</button>
+                      <button onClick={() => openEdit(u)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all">Éditer</button>
+                      <button onClick={() => { if(confirm(`Supprimer définitivement ${u.firstName} ${u.lastName} ?`)) onUpdateUsers(users.filter(user => user.id !== u.id)); }} className="text-rose-500 font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 px-3 py-1.5 rounded-lg transition-all">Suppr</button>
                     </td>
                   </tr>
                 ))}

@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { User, Meeting, ProfessionalCategory, Rating } from '../types';
 import { Button } from './Button';
 import { dbService } from '../services/database';
+import { AvatarPicker } from './AvatarPicker';
 
 interface SynthesisProps {
   currentUser: User;
@@ -20,12 +21,12 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
     role: currentUser.role,
     bio: currentUser.bio,
     categories: currentUser.categories,
-    connectionCode: currentUser.connectionCode
+    connectionCode: currentUser.connectionCode,
+    avatar: currentUser.avatar
   });
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  // État pour l'édition des notes
   const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
   const [tempScore, setTempScore] = useState<number>(0);
   const [tempComment, setTempComment] = useState<string>('');
@@ -110,7 +111,6 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
       const updatedRatings = [...otherRatings, newRating];
       await dbService.updateMeeting(meetingId, { ratings: updatedRatings });
 
-      // Recalculer la moyenne du destinataire
       const allMeetings = meetings.map(m => m.id === meetingId ? { ...m, ratings: updatedRatings } : m);
       const allRatingsToOther = allMeetings
         .flatMap(m => m.ratings || [])
@@ -166,13 +166,26 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
                   onClick={() => setIsEditing(true)}
                   className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 h-12 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg"
                 >
-                  ✏️ Modifier mes informations
+                  ✏️ Modifier mon profil
                 </button>
               </div>
             </div>
           </div>
         ) : (
           <form onSubmit={handleSaveProfile} className="relative z-10 space-y-8 animate-in fade-in duration-300">
+            
+            {/* Section Modification Avatar */}
+            <div className="flex flex-col md:flex-row items-center gap-8 mb-8 bg-white/5 p-6 rounded-[2.5rem] border border-white/10">
+              <AvatarPicker 
+                currentAvatar={editForm.avatar || ''} 
+                onAvatarChange={(base64) => setEditForm(prev => ({ ...prev, avatar: base64 }))} 
+              />
+              <div className="text-center md:text-left space-y-2">
+                 <p className="text-[10px] font-black text-white/40 uppercase tracking-widest">Photo de Profil</p>
+                 <p className="text-[9px] text-indigo-400 italic">Prenez une nouvelle photo ou importez-en une pour personnaliser votre profil.</p>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-white/40 uppercase tracking-widest ml-2">Prénom</label>

@@ -1,5 +1,7 @@
 {
   "name": "Peer2Peer | Saison 2",
   "description": "Networking professionnel entre pairs Saison 2. Sessions de 8 minutes, matching par catégorie et palmarès des duos haute-performance.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [
+    "camera"
+  ]
 }

@@ -1,7 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProfessionalCategory, User } from '../types';
 import { Button } from './Button';
+import { AvatarPicker } from './AvatarPicker';
 
 interface RegistrationProps {
   onRegister: (user: User) => void;
@@ -13,9 +14,16 @@ export const Registration: React.FC<RegistrationProps> = ({ onRegister }) => {
     lastName: '',
     company: '',
     role: '',
-    categories: [ProfessionalCategory.DSI] as ProfessionalCategory[],
-    bio: ''
+    categories: [] as ProfessionalCategory[],
+    bio: '',
+    avatar: ''
   });
+
+  // Génération d'un avatar par défaut à l'initialisation
+  useEffect(() => {
+    const defaultAvatar = `https://picsum.photos/seed/${Math.random().toString(36).substr(2, 9)}/200`;
+    setFormData(prev => ({ ...prev, avatar: defaultAvatar }));
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -28,7 +36,6 @@ export const Registration: React.FC<RegistrationProps> = ({ onRegister }) => {
       id: `u-${Math.random().toString(36).substr(2, 9)}`,
       ...formData,
       name: fullName,
-      avatar: `https://picsum.photos/seed/${fullName}/200`,
       avgScore: 0
     };
     onRegister(newUser);
@@ -52,7 +59,17 @@ export const Registration: React.FC<RegistrationProps> = ({ onRegister }) => {
         <p className="text-slate-500 mt-2 md:mt-4 text-base md:text-xl font-medium max-w-lg mx-auto leading-relaxed">Sessions de matching Saison 2.</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
+      <form onSubmit={handleSubmit} className="space-y-8">
+        
+        {/* Section Avatar */}
+        <div className="flex flex-col items-center justify-center space-y-4 py-4 bg-slate-50/50 rounded-[2.5rem] border border-slate-100">
+           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Votre Photo de Profil</label>
+           <AvatarPicker 
+             currentAvatar={formData.avatar} 
+             onAvatarChange={(base64) => setFormData(prev => ({ ...prev, avatar: base64 }))} 
+           />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
           <div className="space-y-1 md:space-y-2">
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Prénom</label>

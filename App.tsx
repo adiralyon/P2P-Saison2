@@ -373,7 +373,7 @@ const App: React.FC = () => {
               <>
                 {userEntryMode === 'choice' && (
                   <div className="max-w-2xl mx-auto space-y-12 py-20 text-center animate-in zoom-in duration-500">
-                    <h2 className="text-5xl font-black text-slate-900 tracking-tight italic uppercase">Bienvenue Pair</h2>
+                    <h2 className="text-5xl font-black text-slate-900 tracking-tight italic uppercase">Bienvenue !</h2>
                     <div className="space-y-6">
                       <Button 
                         size="lg" 
@@ -464,16 +464,36 @@ const App: React.FC = () => {
                 )}
 
                 {currentRound !== null && currentRound > 0 && (
-                  <div className="bg-indigo-600 text-white p-6 md:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.3)] border border-indigo-400 flex flex-col md:flex-row items-center justify-between gap-6">
-                    <div className="flex items-center space-x-6">
-                      <div className="bg-white/20 w-16 h-16 rounded-3xl flex items-center justify-center text-4xl animate-pulse">🚀</div>
+                  <div className="bg-indigo-600 text-white p-6 md:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.3)] border border-indigo-400 flex flex-col md:flex-row items-center justify-between gap-6 overflow-hidden relative">
+                    {/* Background decoration */}
+                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -mr-20 -mt-20 blur-3xl"></div>
+                    
+                    <div className="flex items-center space-x-6 relative z-10">
+                      {/* Avatar du pair dans la bannière */}
+                      {userMeetings.find(m => m.round === currentRound) && (
+                        <div className="relative group">
+                          <img 
+                            src={getOtherParticipant(userMeetings.find(m => m.round === currentRound)!)?.avatar} 
+                            className="w-20 h-20 md:w-24 md:h-24 rounded-[2rem] border-4 border-white shadow-2xl object-cover transform rotate-[-3deg] group-hover:rotate-0 transition-transform" 
+                          />
+                          <div className="absolute -bottom-2 -right-2 bg-white text-indigo-600 w-10 h-10 rounded-2xl flex items-center justify-center font-black text-xs shadow-xl">
+                            T{userMeetings.find(m => m.round === currentRound)?.tableNumber}
+                          </div>
+                        </div>
+                      )}
                       <div>
-                        <h3 className="text-3xl font-black uppercase italic tracking-tighter">Round {currentRound} lancé !</h3>
-                        <p className="text-indigo-100 font-bold uppercase tracking-widest text-[10px]">Vérifiez votre table et rejoignez votre pair.</p>
+                        <h3 className="text-2xl md:text-4xl font-black uppercase italic tracking-tighter">Round {currentRound} en cours !</h3>
+                        {userMeetings.find(m => m.round === currentRound) ? (
+                          <p className="text-indigo-100 font-bold uppercase tracking-widest text-[10px] md:text-xs mt-1">
+                            Vous rencontrez <span className="text-white underline decoration-white/30 underline-offset-4">{getOtherParticipant(userMeetings.find(m => m.round === currentRound)!)?.name}</span> ({getOtherParticipant(userMeetings.find(m => m.round === currentRound)!)?.company})
+                          </p>
+                        ) : (
+                          <p className="text-indigo-100 font-bold uppercase tracking-widest text-[10px]">Pause ou aucun rendez-vous pour ce round.</p>
+                        )}
                       </div>
                     </div>
                     {userMeetings.find(m => m.round === currentRound) && (
-                      <Button variant="secondary" className="bg-white text-indigo-600 hover:bg-slate-100 h-16 px-10 rounded-2xl font-black uppercase shadow-xl" onClick={() => {
+                      <Button variant="secondary" className="bg-white text-indigo-600 hover:bg-slate-100 h-16 px-10 rounded-2xl font-black uppercase shadow-xl relative z-10" onClick={() => {
                         const m = userMeetings.find(meet => meet.round === currentRound);
                         if(m) startMeeting(m.id);
                       }}>Rejoindre Table {userMeetings.find(m => m.round === currentRound)?.tableNumber}</Button>
@@ -511,11 +531,20 @@ const App: React.FC = () => {
                           <span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">Round {m.round} • Table {m.tableNumber}</span>
                         </div>
                         <div className="flex items-center space-x-6 mb-10">
-                          <img src={other?.avatar} className="w-20 h-20 rounded-2xl shadow-xl border-4 border-white object-cover" />
-                          <div><p className="text-xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p><p className="text-indigo-600 text-[10px] font-black uppercase tracking-widest mt-1">{other?.role}</p></div>
+                          <div className="relative">
+                            <img src={other?.avatar} className="w-24 h-24 rounded-[2rem] shadow-xl border-4 border-white object-cover" />
+                            {isCompleted && (
+                              <div className="absolute -bottom-2 -right-2 bg-emerald-500 text-white w-8 h-8 rounded-xl flex items-center justify-center text-xs shadow-lg">✓</div>
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-2xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p>
+                            <p className="text-indigo-600 text-[10px] font-black uppercase tracking-widest mt-1">{other?.role}</p>
+                            <p className="text-slate-400 text-[9px] font-bold uppercase mt-1 tracking-tight truncate max-w-[150px]">{other?.company}</p>
+                          </div>
                         </div>
                         {!isCompleted && (<Button className="w-full h-14 rounded-xl text-sm font-black tracking-widest uppercase shadow-xl" onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
-                        {isCompleted && (<div className="bg-emerald-500 text-white text-center py-4 rounded-xl text-xs font-black uppercase tracking-[0.2em]">Terminé ✓</div>)}
+                        {isCompleted && (<div className="bg-emerald-500 text-white text-center py-4 rounded-xl text-xs font-black uppercase tracking-[0.2em]">Rendez-vous Terminé ✓</div>)}
                       </div>
                     )
                   })}

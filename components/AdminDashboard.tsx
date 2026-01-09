@@ -43,8 +43,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  
   const [editingExpertiseUserId, setEditingExpertiseUserId] = useState<string | null>(null);
+  const [editingCodeUserId, setEditingCodeUserId] = useState<string | null>(null);
+  const [tempCode, setTempCode] = useState('');
+  
   const expertiseMenuRef = useRef<HTMLDivElement>(null);
+  const codeInputRef = useRef<HTMLInputElement>(null);
   
   const [filterPlanningRound, setFilterPlanningRound] = useState<number | 'all'>('all');
   const [filterPlanningExpertise, setFilterPlanningExpertise] = useState<ProfessionalCategory | 'all'>('all');
@@ -58,7 +63,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     lastName: '',
     company: '',
     role: '',
-    categories: [ProfessionalCategory.DSI],
+    categories: [],
     bio: ''
   });
 
@@ -66,6 +71,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const handleClickOutside = (event: MouseEvent) => {
       if (expertiseMenuRef.current && !expertiseMenuRef.current.contains(event.target as Node)) {
         setEditingExpertiseUserId(null);
+      }
+      if (codeInputRef.current && !codeInputRef.current.contains(event.target as Node)) {
+        setEditingCodeUserId(null);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -78,23 +86,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return `${p}-${n}`;
   };
 
-  const openAdd = () => {
-    setFormData({ firstName: '', lastName: '', company: '', role: '', categories: [ProfessionalCategory.DSI], bio: '' });
-    setEditingUser(null);
-    setShowAddModal(true);
-  };
-
-  const openEdit = (user: User) => {
-    setFormData({ 
-      firstName: user.firstName, 
-      lastName: user.lastName, 
-      company: user.company, 
-      role: user.role, 
-      categories: user.categories, 
-      bio: user.bio 
-    });
-    setEditingUser(user);
-    setShowAddModal(true);
+  const handleActualizeAvatars = () => {
+    if (!confirm("Voulez-vous regénérer aléatoirement tous les avatars des participants ?")) return;
+    const updatedUsers = users.map(u => ({
+      ...u,
+      avatar: `https://picsum.photos/seed/${u.name}-${Math.random().toString(36).substr(2, 5)}/200`
+    }));
+    onUpdateUsers(updatedUsers);
   };
 
   const handleSort = (field: SortField) => {
@@ -130,23 +128,62 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     });
   }, [users, sortField, sortOrder, searchQuery]);
 
-  const exportUsersToExcel = () => {
-    const exportData = users.map(u => ({
-      ID: u.id,
-      Prénom: u.firstName,
-      Nom: u.lastName,
-      Entreprise: u.company,
-      Fonction: u.role,
-      Expertises: u.categories.join(', '),
-      Code: u.connectionCode,
-      'Note Moyenne': u.avgScore.toFixed(2),
-      'Match Final ID': u.matchId || ''
-    }));
+  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      processImportData(data);
+    };
+    reader.readAsBinaryString(file);
+  };
 
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Pairs");
-    XLSX.writeFile(wb, "P2P_Pairs_Saison2.xlsx");
+  const processImportData = (data: any[]) => {
+    try {
+      const newUsers: User[] = data.map((row, index) => {
+        const keys = Object.keys(row);
+        const prenomKey = keys.find(k => ['prénom', 'prenom', 'first name', 'firstname'].includes(k.toLowerCase().trim()));
+        const nomKey = keys.find(k => ['nom', 'last name', 'lastname'].includes(k.toLowerCase().trim()) && k !== prenomKey);
+        const expertiseKey = keys.find(k => ['expertises', 'expertise', 'catégories', 'categories', 'catégorie', 'categorie'].includes(k.toLowerCase().trim()));
+        
+        const fName = (row[prenomKey || ''] || '').toString().trim();
+        const lName = (row[nomKey || ''] || '').toString().trim();
+        const fullName = `${fName} ${lName}`.trim();
+        const code = generateCode(fName, lName);
+
+        let cats: ProfessionalCategory[] = [];
+        if (expertiseKey && row[expertiseKey]) {
+          const parts = row[expertiseKey].toString().split(/[,;]/);
+          const matched = parts
+            .map((p: string) => p.trim())
+            .filter((p: string) => Object.values(ProfessionalCategory).includes(p as ProfessionalCategory)) as ProfessionalCategory[];
+          if (matched.length > 0) cats = matched;
+        }
+
+        return {
+          id: `u-${Math.random().toString(36).substr(2, 9)}`,
+          firstName: fName || 'Prénom',
+          lastName: lName || 'Nom',
+          name: fullName || `Pair ${index + 1}`,
+          company: row['Entreprise'] || row['Société'] || row['Company'] || 'À compléter',
+          role: row['Fonction'] || row['Poste'] || row['Job'] || 'Pair',
+          categories: cats,
+          bio: '', 
+          avatar: `https://picsum.photos/seed/${fullName}${index}-${Math.random().toString(36).substr(2, 5)}/200`,
+          avgScore: 0,
+          connectionCode: code
+        };
+      }).filter(u => u.lastName.length > 0 || u.firstName.length > 0);
+
+      onUpdateUsers([...users, ...newUsers]);
+      setShowImportModal(false);
+      alert(`${newUsers.length} pairs importés avec succès.`);
+    } catch (e) {
+      alert("Erreur lors de l'import.");
+    }
   };
 
   const exportPlanningToExcel = () => {
@@ -171,113 +208,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     XLSX.writeFile(wb, "P2P_Planning_Saison2.xlsx");
   };
 
-  const exportResultsToExcel = () => {
-    const exportData = potentialMatches.map(pm => ({
-      'Pair 1': pm.u1.name,
-      'Entreprise 1': pm.u1.company,
-      'Pair 2': pm.u2.name,
-      'Entreprise 2': pm.u2.company,
-      'Score Synergie (Somme)': pm.score,
-      'Moyenne (/5)': (pm.score / 2).toFixed(2),
-      'Match Validé': pm.u1.matchId === pm.u2.id ? 'OUI' : 'NON'
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(exportData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Matchs");
-    XLSX.writeFile(wb, "P2P_Resultats_Duos_Saison2.xlsx");
-  };
-
-  const processImportData = (data: any[]) => {
-    try {
-      const newUsers: User[] = data.map((row, index) => {
-        const keys = Object.keys(row);
-        const prenomKey = keys.find(k => ['prénom', 'prenom', 'first name', 'firstname'].includes(k.toLowerCase().trim()));
-        const nomKey = keys.find(k => ['nom', 'last name', 'lastname'].includes(k.toLowerCase().trim()) && k !== prenomKey);
-        
-        const fName = (row[prenomKey || ''] || '').toString().trim();
-        const lName = (row[nomKey || ''] || '').toString().trim();
-        const fullName = `${fName} ${lName}`.trim();
-        const code = generateCode(fName, lName);
-
-        return {
-          id: `u-${Math.random().toString(36).substr(2, 9)}`,
-          firstName: fName || 'Prénom',
-          lastName: lName || 'Nom',
-          name: fullName || `Pair ${index + 1}`,
-          company: row['Entreprise'] || row['Société'] || row['Company'] || 'À compléter',
-          role: row['Fonction'] || row['Poste'] || row['Job'] || 'Pair',
-          categories: [ProfessionalCategory.AUTRE],
-          bio: '', 
-          avatar: `https://picsum.photos/seed/${fullName}${index}/200`,
-          avgScore: 0,
-          connectionCode: code
-        };
-      }).filter(u => u.lastName.length > 0 || u.firstName.length > 0);
-
-      onUpdateUsers([...users, ...newUsers]);
-      setShowImportModal(false);
-    } catch (e) {
-      alert("Erreur lors de l'import.");
-    }
-  };
-
-  const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const bstr = evt.target?.result;
-      const wb = XLSX.read(bstr, { type: 'binary' });
-      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-      processImportData(data);
-    };
-    reader.readAsBinaryString(file);
-  };
-
-  const handleSaveUser = (e: React.FormEvent) => {
-    e.preventDefault();
-    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
-    const code = generateCode(formData.firstName || '', formData.lastName || '');
-    
-    if (editingUser) {
-      onUpdateUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...formData, name: fullName, connectionCode: u.connectionCode || code } as User : u));
-    } else {
-      const newUser: User = { 
-        id: Math.random().toString(36).substr(2, 9), 
-        avgScore: 0, 
-        avatar: `https://picsum.photos/seed/${fullName}/200`, 
-        ...formData,
-        name: fullName,
-        connectionCode: code
-      } as User;
-      onUpdateUsers([...users, newUser]);
-    }
-    setEditingUser(null);
-    setShowAddModal(false);
-  };
-
-  const handleConfirmMatch = async (u1Id: string, u2Id: string) => {
-    if(!confirm("Valider ce Duo comme Match Officiel pour le Palmarès ?")) return;
-    await dbService.updateUser(u1Id, { matchId: u2Id });
-    await dbService.updateUser(u2Id, { matchId: u1Id });
-    alert("Match validé ! Les participants recevront le résultat.");
-  };
-
-  const toggleQuickCategory = (userId: string, category: ProfessionalCategory) => {
-    const user = users.find(u => u.id === userId);
-    if (!user) return;
-    const currentCats = user.categories || [];
-    const isSelected = currentCats.includes(category);
-    let newCats;
-    if (isSelected) {
-      newCats = currentCats.filter(c => c !== category);
-    } else {
-      newCats = [...currentCats, category];
-    }
-    onUpdateUsers(users.map(u => u.id === userId ? { ...u, categories: newCats } : u));
-  };
-
   const potentialMatches = useMemo(() => {
     const pairs: { u1: User, u2: User, score: number, meeting: Meeting }[] = [];
     meetings.filter(m => m.ratings && m.ratings.length >= 2).forEach(m => {
@@ -286,12 +216,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       if(!u1 || !u2) return;
       const r1 = m.ratings.find(r => r.fromId === u1.id && r.toId === u2.id);
       const r2 = m.ratings.find(r => r.fromId === u2.id && r.toId === u1.id);
-      if(r1 && r2) {
-        pairs.push({ u1, u2, score: r1.score + r2.score, meeting: m });
-      }
+      if(r1 && r2) pairs.push({ u1, u2, score: r1.score + r2.score, meeting: m });
     });
     return pairs.sort((a,b) => b.score - a.score);
   }, [meetings, users]);
+
+  const exportPalmaresToExcel = () => {
+    const exportData = potentialMatches.map(pm => ({
+      Pair1: pm.u1.name,
+      Entreprise1: pm.u1.company,
+      Pair2: pm.u2.name,
+      Entreprise2: pm.u2.company,
+      ScoreSynergie: pm.score,
+      Expertise: pm.meeting.category,
+      Status: pm.u1.matchId === pm.u2.id ? 'Alliance Validée' : 'Potentiel'
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Palmares");
+    XLSX.writeFile(wb, "P2P_Palmares_Saison2.xlsx");
+  };
+
+  const exportAllRatingsToExcel = () => {
+    const exportData = meetings.flatMap(m => (m.ratings || []).map(r => {
+      const from = users.find(u => u.id === r.fromId);
+      const to = users.find(u => u.id === r.toId);
+      return {
+        Round: m.round,
+        Table: m.tableNumber,
+        Expertise: m.category,
+        Auteur: from?.name || r.fromId,
+        EntrepriseAuteur: from?.company || '',
+        Cible: to?.name || r.toId,
+        EntrepriseCible: to?.company || '',
+        Note: r.score,
+        Commentaire: r.comment || ''
+      };
+    })).sort((a, b) => a.Round - b.Round);
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Bilans_Detailles");
+    XLSX.writeFile(wb, "P2P_Bilans_Saison2.xlsx");
+  };
+
+  const handleUpdateCode = (userId: string) => {
+    if (!tempCode.trim()) {
+      setEditingCodeUserId(null);
+      return;
+    }
+    onUpdateUsers(users.map(u => u.id === userId ? { ...u, connectionCode: tempCode.trim().toUpperCase() } : u));
+    setEditingCodeUserId(null);
+  };
+
+  const toggleQuickCategory = (userId: string, category: ProfessionalCategory) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+    const currentCats = user.categories || [];
+    const isSelected = currentCats.includes(category);
+    let newCats = isSelected ? currentCats.filter(c => c !== category) : [...currentCats, category];
+    onUpdateUsers(users.map(u => u.id === userId ? { ...u, categories: newCats } : u));
+  };
 
   const filteredMeetings = useMemo(() => {
     return meetings.filter(m => {
@@ -313,18 +299,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const meetingsByRound = useMemo(() => {
     const rounds: Record<number, Meeting[]> = {};
-    
     filteredMeetings.forEach(m => {
       if (!rounds[m.round]) rounds[m.round] = [];
       rounds[m.round].push(m);
     });
-
     Object.keys(rounds).forEach(r => {
       rounds[parseInt(r)].sort((a, b) => a.tableNumber - b.tableNumber);
     });
-
     return Object.entries(rounds).sort(([a], [b]) => parseInt(a) - parseInt(b));
   }, [filteredMeetings]);
+
+  const handleSaveUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.categories || formData.categories.length === 0) {
+      alert("Veuillez sélectionner au moins une catégorie.");
+      return;
+    }
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+    const code = generateCode(formData.firstName || '', formData.lastName || '');
+    if (editingUser) {
+      onUpdateUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...formData, name: fullName, connectionCode: u.connectionCode || code } as User : u));
+    } else {
+      const newUser: User = { id: Math.random().toString(36).substr(2, 9), avgScore: 0, avatar: `https://picsum.photos/seed/${fullName}-${Math.random().toString(36).substr(2, 5)}/200`, ...formData, name: fullName, connectionCode: code } as User;
+      onUpdateUsers([...users, newUser]);
+    }
+    setShowAddModal(false);
+  };
 
   return (
     <div className="space-y-6 md:space-y-10 animate-in fade-in duration-500 pb-20">
@@ -348,9 +348,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <div><h3 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Les Pairs</h3><p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-2">{filteredAndSortedUsers.length} profils actifs</p></div>
             <div className="flex flex-wrap gap-3">
                <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={() => setShowImportModal(true)}>📁 Import Excel</Button>
-               <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={exportUsersToExcel}>📤 Exporter (.xlsx)</Button>
-               <Button size="sm" className="rounded-xl font-black uppercase px-8 shadow-xl" onClick={openAdd}>➕ Ajouter Manuel</Button>
-               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6 shadow-lg shadow-rose-100" onClick={onResetAll}>⚠️ Reset Tout (Global)</Button>
+               <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={handleActualizeAvatars}>🔄 Actualiser Avatars</Button>
+               <Button size="sm" className="rounded-xl font-black uppercase px-8 shadow-xl" onClick={() => {setFormData({firstName:'',lastName:'',company:'',role:'',categories:[],bio:''}); setEditingUser(null); setShowAddModal(true);}}>➕ Ajouter Manuel</Button>
+               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6 shadow-lg shadow-rose-100" onClick={onResetAll}>⚠️ Reset Tout</Button>
             </div>
           </div>
           <div className="overflow-x-auto min-h-[400px]">
@@ -360,8 +360,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('firstName')}>Prénom</th>
                   <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('lastName')}>Nom</th>
                   <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('company')}>Entreprise</th>
-                  <th className="px-10 py-6">Code</th>
-                  <th className="px-10 py-6">Expertises (Clic pour modif.)</th>
+                  <th className="px-10 py-6">Code (Clic p. modif.)</th>
+                  <th className="px-10 py-6">Expertises (Clic p. modif.)</th>
                   <th className="px-10 py-6 text-right">Actions</th>
                 </tr>
               </thead>
@@ -371,7 +371,28 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <td className="px-10 py-6 font-bold text-slate-900">{u.firstName}</td>
                     <td className="px-10 py-6 font-black text-slate-900 uppercase tracking-tight">{u.lastName}</td>
                     <td className="px-10 py-6 text-sm font-medium text-slate-600">{u.company}</td>
-                    <td className="px-10 py-6"><span className="bg-indigo-50 text-indigo-700 font-black px-2 py-1 rounded text-[10px] border border-indigo-100">{u.connectionCode || '----'}</span></td>
+                    <td className="px-10 py-6 relative">
+                      {editingCodeUserId === u.id ? (
+                        <input 
+                          ref={codeInputRef}
+                          autoFocus
+                          type="text"
+                          maxLength={5}
+                          className="bg-indigo-50 border-2 border-indigo-600 rounded-lg px-2 py-1 text-[12px] font-black uppercase tracking-widest outline-none w-24"
+                          value={tempCode}
+                          onChange={(e) => setTempCode(e.target.value.toUpperCase())}
+                          onBlur={() => handleUpdateCode(u.id)}
+                          onKeyDown={(e) => e.key === 'Enter' && handleUpdateCode(u.id)}
+                        />
+                      ) : (
+                        <div 
+                          onClick={() => { setEditingCodeUserId(u.id); setTempCode(u.connectionCode || ''); }}
+                          className="cursor-pointer hover:scale-105 transition-transform inline-block"
+                        >
+                          <span className="bg-indigo-50 text-indigo-700 font-black px-2 py-1 rounded text-[10px] border border-indigo-100 shadow-sm">{u.connectionCode || '----'}</span>
+                        </div>
+                      )}
+                    </td>
                     <td className="px-10 py-6 relative">
                       <div 
                         onClick={() => setEditingExpertiseUserId(u.id)}
@@ -412,7 +433,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       )}
                     </td>
                     <td className="px-10 py-6 text-right space-x-4">
-                      <button onClick={() => openEdit(u)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all">Éditer</button>
+                      <button onClick={() => { setFormData({firstName:u.firstName,lastName:u.lastName,company:u.company,role:u.role,categories:u.categories,bio:u.bio}); setEditingUser(u); setShowAddModal(true); }} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all">Éditer</button>
                       <button onClick={() => onDeleteUser(u.id)} className="text-rose-500 font-black text-[10px] uppercase tracking-widest hover:bg-rose-50 px-3 py-1.5 rounded-lg transition-all">Suppr</button>
                     </td>
                   </tr>
@@ -425,6 +446,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {adminState === 'PLANNING' && (
         <div className="space-y-12">
+          {/* Pilotage Live des Rounds */}
           <div className="bg-slate-900 p-12 rounded-[3.5rem] shadow-2xl text-center">
             <h3 className="text-4xl font-black text-white uppercase italic tracking-tighter mb-10">Pilotage Live</h3>
             <div className="flex flex-wrap justify-center gap-6">
@@ -439,35 +461,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </button>
               ))}
               <div className="w-px h-24 bg-white/10 mx-2 hidden md:block"></div>
-              <button 
-                onClick={() => onSetCurrentRound(0)} 
-                className={`h-24 px-10 rounded-[2.5rem] font-black text-xl border-4 transition-all ${currentRound === 0 ? 'bg-amber-500 border-white text-white scale-110 shadow-xl' : 'bg-white/5 border-white/10 text-amber-500 hover:border-amber-500/20'}`}
-              >
-                Pause ☕️
-              </button>
-              <button 
-                onClick={() => onSetCurrentRound(-1)} 
-                className={`h-24 px-10 rounded-[2.5rem] font-black text-xl border-4 transition-all ${currentRound === -1 ? 'bg-rose-600 border-white text-white scale-110 shadow-xl' : 'bg-white/5 border-white/10 text-rose-500 hover:border-rose-500/20'}`}
-              >
-                Fin & Résultats 🏁
-              </button>
+              <button onClick={() => onSetCurrentRound(0)} className={`h-24 px-10 rounded-[2.5rem] font-black text-xl border-4 transition-all ${currentRound === 0 ? 'bg-amber-500 border-white text-white scale-110 shadow-xl' : 'bg-white/5 border-white/10 text-amber-500 hover:border-amber-500/20'}`}>Pause ☕️</button>
+              <button onClick={() => onSetCurrentRound(-1)} className={`h-24 px-10 rounded-[2.5rem] font-black text-xl border-4 transition-all ${currentRound === -1 ? 'bg-rose-600 border-white text-white scale-110 shadow-xl' : 'bg-white/5 border-white/10 text-rose-500 hover:border-rose-500/20'}`}>Fin 🏁</button>
             </div>
           </div>
 
           <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-8">
             <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Filtres Planning</h4>
+              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Actions Planning</h4>
               <div className="flex flex-wrap gap-2">
-                 <Button variant="secondary" size="sm" className="rounded-xl h-12 font-black uppercase" onClick={onAutoMatch}>Reset & Tout Relancer</Button>
-                 <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase" onClick={onIncrementalMatch}>Matching Nouveaux</Button>
-                 <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase" onClick={exportPlanningToExcel}>📤 Exporter Planning</Button>
-                 <Button variant="danger" size="sm" className="rounded-xl h-12 font-black uppercase" onClick={onResetPlanning}>🗑 Vider Planning</Button>
+                 <Button variant="secondary" size="sm" className="rounded-xl h-12 font-black uppercase tracking-widest px-8" onClick={onAutoMatch}>Lancer les rendez-vous</Button>
+                 <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase tracking-widest px-8" onClick={onIncrementalMatch}>Actualiser le planning</Button>
+                 <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase tracking-widest px-8" onClick={exportPlanningToExcel}>Exporter le planning</Button>
+                 <Button variant="danger" size="sm" className="rounded-xl h-12 font-black uppercase tracking-widest px-8" onClick={onResetPlanning}>Supprimer le planning</Button>
               </div>
             </div>
 
             <div className="flex flex-wrap gap-6 items-end">
               <div className="space-y-2">
-                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Afficher Round</label>
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Round</label>
                 <div className="flex bg-slate-50 p-1 rounded-xl border border-slate-100">
                   <button onClick={() => setFilterPlanningRound('all')} className={`px-4 py-1.5 text-[10px] font-black rounded-lg transition-all ${filterPlanningRound === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:bg-slate-200'}`}>Tous</button>
                   {[1,2,3,4,5,6,7].map(r => (
@@ -475,219 +487,177 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ))}
                 </div>
               </div>
-
               <div className="space-y-2">
                 <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Table n°</label>
-                <input 
-                  type="number" 
-                  placeholder="Ex: 5"
-                  className="h-10 w-24 bg-slate-50 border border-slate-100 rounded-xl px-4 text-xs font-bold outline-none focus:border-indigo-600"
-                  value={filterPlanningTable}
-                  onChange={(e) => setFilterPlanningTable(e.target.value)}
-                />
+                <input type="number" placeholder="Ex: 5" className="h-10 w-24 bg-slate-50 border border-slate-100 rounded-xl px-4 text-xs font-bold outline-none focus:border-indigo-600" value={filterPlanningTable} onChange={(e) => setFilterPlanningTable(e.target.value)}/>
               </div>
-
               <div className="space-y-2 flex-1 min-w-[200px]">
-                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Filtrer Synergie</label>
-                <select 
-                  className="w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-4 text-[10px] font-black uppercase outline-none focus:border-indigo-600"
-                  value={filterPlanningExpertise}
-                  onChange={(e) => setFilterPlanningExpertise(e.target.value as any)}
-                >
+                <label className="text-[8px] font-black text-slate-400 uppercase tracking-widest block ml-2">Expertise</label>
+                <select className="w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-4 text-[10px] font-black uppercase outline-none focus:border-indigo-600" value={filterPlanningExpertise} onChange={(e) => setFilterPlanningExpertise(e.target.value as any)}>
                   <option value="all">Toutes les expertises</option>
-                  {Object.values(ProfessionalCategory).map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
+                  {Object.values(ProfessionalCategory).map(cat => (<option key={cat} value={cat}>{cat}</option>))}
                 </select>
               </div>
-
-              <button 
-                onClick={() => { setFilterPlanningRound('all'); setFilterPlanningExpertise('all'); setFilterPlanningTable(''); setSearchQuery(''); }}
-                className="h-10 px-4 text-[8px] font-black text-rose-500 uppercase hover:bg-rose-50 rounded-xl transition-all"
-              >
-                Effacer Filtres
-              </button>
             </div>
           </div>
 
           <div className="space-y-16">
-            {meetingsByRound.length === 0 ? (
-              <div className="p-20 text-center flex flex-col items-center">
-                <span className="text-5xl mb-6 opacity-20">📭</span>
-                <p className="text-slate-400 font-black uppercase tracking-widest text-sm">Aucun match ne correspond aux filtres actuels.</p>
-              </div>
-            ) : (
-              meetingsByRound.map(([round, roundMeetings]) => (
-                <div key={round} className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-                  <div className="flex items-center space-x-6">
-                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl ${parseInt(round) === currentRound ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-900 text-white'}`}>R{round}</div>
-                    <h4 className={`text-2xl font-black uppercase italic ${parseInt(round) === currentRound ? 'text-indigo-600' : 'text-slate-900'}`}>Round {round}</h4>
-                    <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest">{roundMeetings.length} matchs</span>
-                    <div className="h-px bg-slate-100 flex-1"></div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {roundMeetings.map(m => {
-                      const u1 = users.find(u => u.id === m.participant1Id);
-                      const u2 = users.find(u => u.id === m.participant2Id);
-                      return (
-                        <div key={m.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm relative group hover:shadow-xl transition-all">
-                           <div className="absolute top-0 right-0 px-3 py-1.5 bg-slate-900 text-white text-[8px] font-black uppercase rounded-bl-xl tracking-widest">T{m.tableNumber}</div>
-                           <div className="flex items-center justify-between mt-2">
-                             <div className="text-center flex-1">
-                               <img src={u1?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
-                               <p className="text-[7px] font-black uppercase truncate">{u1?.name}</p>
-                             </div>
-                             <div className="px-2 font-black text-slate-100 text-[8px]">&rarr;</div>
-                             <div className="text-center flex-1">
-                               <img src={u2?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
-                               <p className="text-[7px] font-black uppercase truncate">{u2?.name}</p>
-                             </div>
-                         </div>
-                         <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
-                            <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest truncate max-w-[120px]">{m.category}</span>
-                            <div className={`w-2 h-2 rounded-full ${m.status === 'completed' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : m.status === 'ongoing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]' : 'bg-slate-200'}`}></div>
-                         </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+            {meetingsByRound.map(([round, roundMeetings]) => (
+              <div key={round} className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+                <div className="flex items-center space-x-6">
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black text-xl ${parseInt(round) === currentRound ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-900 text-white'}`}>R{round}</div>
+                  <h4 className={`text-2xl font-black uppercase italic ${parseInt(round) === currentRound ? 'text-indigo-600' : 'text-slate-900'}`}>Round {round}</h4>
+                  <div className="h-px bg-slate-100 flex-1"></div>
                 </div>
-              ))
-            )}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                  {roundMeetings.map(m => {
+                    const u1 = users.find(u => u.id === m.participant1Id);
+                    const u2 = users.find(u => u.id === m.participant2Id);
+                    return (
+                      <div key={m.id} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm relative group hover:shadow-xl transition-all">
+                         <div className="absolute top-0 right-0 px-3 py-1.5 bg-slate-900 text-white text-[8px] font-black uppercase rounded-bl-xl tracking-widest">T{m.tableNumber}</div>
+                         <div className="flex items-center justify-between mt-2">
+                           <div className="text-center flex-1">
+                             <img src={u1?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
+                             <p className="text-[7px] font-black uppercase truncate">{u1?.name}</p>
+                           </div>
+                           <div className="px-2 font-black text-slate-100 text-[8px]">&rarr;</div>
+                           <div className="text-center flex-1">
+                             <img src={u2?.avatar} className="w-10 h-10 rounded-xl mx-auto mb-1 border-2 border-slate-50" />
+                             <p className="text-[7px] font-black uppercase truncate">{u2?.name}</p>
+                           </div>
+                       </div>
+                       <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center">
+                          <span className="text-[8px] font-black text-indigo-400 uppercase tracking-widest truncate max-w-[120px]">{m.category}</span>
+                          <div className={`w-2 h-2 rounded-full ${m.status === 'completed' ? 'bg-emerald-500' : m.status === 'ongoing' ? 'bg-amber-500 animate-pulse' : 'bg-slate-200'}`}></div>
+                       </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
 
       {adminState === 'RESULTS' && (
         <div className="space-y-12">
-          <div className="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 p-12 rounded-[3.5rem] text-white shadow-2xl relative overflow-hidden">
-            <div className="absolute -top-10 -right-10 w-64 h-64 bg-white/5 rounded-full"></div>
-            <h3 className="text-5xl font-black uppercase italic tracking-tighter mb-4 text-center">🏆 Palmarès des Synergies</h3>
-            <p className="text-indigo-200 text-center font-bold uppercase tracking-widest text-xs">Analyse des duos basée sur les notes réciproques (Somme des deux scores / 10)</p>
+          <div className="bg-gradient-to-br from-indigo-900 to-slate-900 p-12 rounded-[3.5rem] text-white shadow-2xl text-center">
+            <h3 className="text-5xl font-black uppercase italic tracking-tighter mb-4">🏆 Palmarès des Synergies</h3>
+            <p className="text-indigo-200 font-bold uppercase tracking-widest text-xs">Analyse des duos basée sur les notes réciproques</p>
+            <div className="flex justify-center gap-4 mt-8">
+               <Button variant="secondary" size="sm" className="rounded-xl px-6 font-bold" onClick={exportPalmaresToExcel}>📊 Export Palmarès (Excel)</Button>
+               <Button variant="outline" size="sm" className="rounded-xl px-6 font-bold bg-white text-slate-900 border-none" onClick={exportAllRatingsToExcel}>📑 Export Bilans Détaillés (Excel)</Button>
+            </div>
           </div>
-
-          <div className="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden min-h-[500px]">
-            <div className="p-10 border-b border-slate-50 flex justify-between items-center bg-slate-50/20">
-              <div><h4 className="text-3xl font-black uppercase italic tracking-tight">Matchs & Alliances</h4><p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-2">{potentialMatches.length} alliances potentielles détectées</p></div>
-              <div className="flex gap-4">
-                <Button variant="outline" size="sm" className="rounded-xl h-12 border-slate-200 font-black uppercase" onClick={exportResultsToExcel}>📤 Exporter Matchs</Button>
-                <Button variant="danger" size="sm" className="rounded-xl h-12 font-black uppercase" onClick={onResetPalmares}>🗑 Reset Palmarès</Button>
-              </div>
+          <div className="bg-white rounded-[3rem] shadow-xl border border-slate-100 overflow-hidden">
+            <div className="p-10 border-b border-slate-50 flex justify-between items-center">
+              <h4 className="text-3xl font-black uppercase italic tracking-tight">Alliances Haute-Performance</h4>
+              <Button variant="danger" size="sm" className="rounded-xl px-6" onClick={onResetPalmares}>Reset Palmarès</Button>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
-                <thead>
-                  <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
-                    <th className="px-10 py-6">Duo Performance</th>
-                    <th className="px-10 py-6">Synergie (Score)</th>
-                    <th className="px-10 py-6">Statut Alliance</th>
-                    <th className="px-10 py-6 text-right">Décision Admin</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {potentialMatches.map((pm) => {
-                    const isMatched = pm.u1.matchId === pm.u2.id;
-                    const isOtherMatched = (pm.u1.matchId && !isMatched) || (pm.u2.matchId && !isMatched);
-                    return (
-                      <tr key={pm.meeting.id} className={`hover:bg-slate-50 transition-colors ${isMatched ? 'bg-emerald-50/50' : isOtherMatched ? 'opacity-30' : ''}`}>
-                        <td className="px-10 py-6">
-                           <div className="flex items-center space-x-4">
-                              <div className="flex -space-x-4">
-                                <img src={pm.u1.avatar} className="w-12 h-12 rounded-xl border-2 border-white shadow-lg" />
-                                <img src={pm.u2.avatar} className="w-12 h-12 rounded-xl border-2 border-white shadow-lg" />
-                              </div>
-                              <div>
-                                <p className="font-black text-sm text-slate-900 uppercase tracking-tight">{pm.u1.name} & {pm.u2.name}</p>
-                                <p className="text-[10px] text-indigo-500 font-bold">{pm.u1.company} • {pm.u2.company}</p>
-                              </div>
-                           </div>
-                        </td>
-                        <td className="px-10 py-6">
-                          <div className="flex items-center space-x-4">
-                            <span className="font-black text-3xl text-indigo-600">{pm.score}</span>
-                            <div className="h-2 w-24 bg-slate-100 rounded-full overflow-hidden">
-                              <div className="h-full bg-indigo-500" style={{ width: `${pm.score * 10}%` }}></div>
+            <table className="w-full text-left">
+              <thead>
+                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                  <th className="px-10 py-6">Duo</th>
+                  <th className="px-10 py-6">Synergie (Score)</th>
+                  <th className="px-10 py-6">Statut</th>
+                  <th className="px-10 py-6 text-right">Décision</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {potentialMatches.map((pm) => {
+                  const isMatched = pm.u1.matchId === pm.u2.id;
+                  const isOtherMatched = (pm.u1.matchId && !isMatched) || (pm.u2.matchId && !isMatched);
+                  return (
+                    <tr key={pm.meeting.id} className={`hover:bg-slate-50 transition-colors ${isMatched ? 'bg-emerald-50/50' : isOtherMatched ? 'opacity-30' : ''}`}>
+                      <td className="px-10 py-6">
+                         <div className="flex items-center space-x-4">
+                            <div className="flex -space-x-4">
+                              <img src={pm.u1.avatar} className="w-10 h-10 rounded-xl border-2 border-white shadow-lg" />
+                              <img src={pm.u2.avatar} className="w-10 h-10 rounded-xl border-2 border-white shadow-lg" />
                             </div>
-                          </div>
-                        </td>
-                        <td className="px-10 py-6">
-                           {isMatched ? (
-                             <div className="flex items-center space-x-2 text-emerald-600 font-black text-[10px] uppercase tracking-widest">
-                               <span className="w-2 h-2 bg-emerald-500 rounded-full"></span>
-                               <span>Duo Officiel</span>
-                             </div>
-                           ) : isOtherMatched ? (
-                             <div className="text-rose-400 font-bold text-[9px] uppercase italic">Conflit: Participant apparié</div>
-                           ) : (
-                             <div className="text-slate-300 font-black text-[10px] uppercase tracking-widest">En attente</div>
-                           )}
-                        </td>
-                        <td className="px-10 py-6 text-right">
-                           {!isMatched && !isOtherMatched && (
-                             <Button size="sm" className="rounded-xl px-6 text-[10px] font-black uppercase tracking-widest shadow-xl" onClick={() => handleConfirmMatch(pm.u1.id, pm.u2.id)}>Valider Duo</Button>
-                           )}
-                           {isMatched && (
-                             <span className="text-emerald-500 font-black text-xl">🤝</span>
-                           )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                            <p className="font-black text-xs uppercase">{pm.u1.name} & {pm.u2.name}</p>
+                         </div>
+                      </td>
+                      <td className="px-10 py-6"><span className="font-black text-2xl text-indigo-600">{pm.score}</span></td>
+                      <td className="px-10 py-6">
+                         {isMatched ? (<span className="text-emerald-600 font-black text-[10px] uppercase">Alliance Validée</span>) : (<span className="text-slate-300 font-black text-[10px] uppercase">En attente</span>)}
+                      </td>
+                      <td className="px-10 py-6 text-right">
+                         {!isMatched && !isOtherMatched && (<Button size="sm" className="rounded-xl px-4 text-[10px] uppercase" onClick={() => { if(confirm("Valider ce Duo ?")) { dbService.updateUser(pm.u1.id, {matchId: pm.u2.id}); dbService.updateUser(pm.u2.id, {matchId: pm.u1.id}); } }}>Valider Duo</Button>)}
+                         {isMatched && <span className="text-emerald-500 font-black">🤝</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
       {showAddModal && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3.5rem] w-full max-w-2xl p-14 shadow-2xl animate-in zoom-in-95 duration-300">
+          <div className="bg-white rounded-[3.5rem] w-full max-w-2xl p-14 shadow-2xl animate-in zoom-in-95 duration-300 overflow-y-auto max-h-[90vh]">
             <h3 className="text-4xl font-black text-slate-900 uppercase italic mb-8">{editingUser ? 'Modifier Pair' : 'Nouveau Pair'}</h3>
             <form onSubmit={handleSaveUser} className="space-y-6">
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Prénom</label>
-                  <input type="text" required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold focus:border-indigo-600 outline-none" value={formData.firstName} onChange={e => setFormData({...formData, firstName: e.target.value})} />
+                  <input type="text" placeholder="Jean" required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold focus:border-indigo-600 outline-none" value={formData.firstName} onChange={e => setFormData({...formData, firstName: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Nom</label>
-                  <input type="text" required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold uppercase focus:border-indigo-600 outline-none" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} />
+                  <input type="text" placeholder="Dupont" required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold uppercase focus:border-indigo-600 outline-none" value={formData.lastName} onChange={e => setFormData({...formData, lastName: e.target.value})} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Entreprise</label>
-                  <input type="text" required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold focus:border-indigo-600 outline-none" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} />
+                  <input type="text" placeholder="Votre société" required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold focus:border-indigo-600 outline-none" value={formData.company} onChange={e => setFormData({...formData, company: e.target.value})} />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Poste</label>
-                  <input type="text" required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold focus:border-indigo-600 outline-none" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} />
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fonction</label>
+                  <input type="text" placeholder="DSI, Expert..." required className="w-full p-5 bg-slate-50 rounded-2xl border border-slate-100 font-bold focus:border-indigo-600 outline-none" value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} />
                 </div>
               </div>
+              
               <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Expertises</label>
-                <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-4 bg-slate-50 rounded-3xl border border-slate-100">
-                   {Object.values(ProfessionalCategory).map(cat => (
-                     <label key={cat} className="flex items-center space-x-3 p-2 bg-white rounded-xl border cursor-pointer hover:border-indigo-300 transition-all">
-                       <input 
-                        type="checkbox" 
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Expertise (Multi-choix)</label>
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto p-2 bg-slate-50 rounded-2xl border border-slate-100">
+                  {Object.values(ProfessionalCategory).map(cat => (
+                    <label key={cat} className="flex items-center space-x-3 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-indigo-300 transition-all group">
+                      <input
+                        type="checkbox"
                         className="w-4 h-4 rounded text-indigo-600"
-                        checked={formData.categories?.includes(cat)} 
+                        checked={formData.categories?.includes(cat)}
                         onChange={() => {
                           const current = formData.categories || [];
                           const updated = current.includes(cat) ? current.filter(c => c !== cat) : [...current, cat];
                           setFormData({...formData, categories: updated});
-                        }} 
-                       />
-                       <span className="text-[9px] font-bold text-slate-600 uppercase truncate">{cat}</span>
-                     </label>
-                   ))}
+                        }}
+                      />
+                      <span className="text-[9px] font-bold text-slate-600 uppercase truncate">{cat}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
-              <div className="flex justify-end gap-6 pt-10 border-t border-slate-50">
-                <button type="button" className="text-slate-400 font-black uppercase text-xs tracking-widest" onClick={() => setShowAddModal(false)}>Annuler</button>
-                <Button type="submit" className="px-12 rounded-2xl h-16 uppercase font-black tracking-widest">Enregistrer</Button>
+
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Bio & Centres d'Intérêt</label>
+                <textarea
+                  className="w-full p-5 rounded-2xl bg-slate-50 border border-slate-100 font-medium italic text-slate-700 outline-none focus:border-indigo-600"
+                  rows={2}
+                  placeholder="Sujets favoris..."
+                  value={formData.bio}
+                  onChange={e => setFormData({ ...formData, bio: e.target.value })}
+                ></textarea>
+              </div>
+
+              <div className="flex justify-end gap-6 pt-6 border-t border-slate-100">
+                <button type="button" className="text-slate-400 font-black uppercase text-xs" onClick={() => setShowAddModal(false)}>Annuler</button>
+                <Button type="submit" className="px-10 h-16 rounded-2xl font-black uppercase">Enregistrer</Button>
               </div>
             </form>
           </div>
@@ -696,24 +666,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {showImportModal && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-6">
-          <div className="bg-white rounded-[3.5rem] w-full max-w-xl p-16 shadow-2xl animate-in zoom-in-95 duration-300 text-center">
-            <div className="w-24 h-24 bg-indigo-50 text-indigo-600 rounded-[2.5rem] flex items-center justify-center mx-auto mb-10 text-5xl">📁</div>
-            <h3 className="text-3xl font-black text-slate-900 uppercase italic mb-4">Importation Pairs</h3>
-            <p className="text-slate-500 font-medium mb-12">Le fichier doit contenir les colonnes : <br/><span className="font-bold text-indigo-600 uppercase tracking-wider">Prénom, Nom, Entreprise, Fonction</span></p>
-            <input 
-              type="file" 
-              accept=".xlsx, .xls" 
-              className="hidden" 
-              id="excel-up-admin-final-v3" 
-              onChange={handleExcelImport} 
-            />
-            <label 
-              htmlFor="excel-up-admin-final-v3" 
-              className="block w-full py-14 border-4 border-dashed border-slate-100 rounded-[3rem] cursor-pointer hover:border-indigo-600 hover:bg-indigo-50 transition-all font-black text-slate-300 hover:text-indigo-600 uppercase tracking-[0.3em] mb-10"
-            >
-              Cliquer pour parcourir
-            </label>
-            <button className="text-slate-400 font-black text-xs uppercase tracking-widest" onClick={() => setShowImportModal(false)}>Annuler</button>
+          <div className="bg-white rounded-[3.5rem] w-full max-w-xl p-16 shadow-2xl text-center">
+            <h3 className="text-3xl font-black text-slate-900 uppercase italic mb-8">Importation Pairs</h3>
+            <input type="file" accept=".xlsx, .xls" className="hidden" id="excel-up-admin" onChange={handleExcelImport} />
+            <label htmlFor="excel-up-admin" className="block w-full py-14 border-4 border-dashed border-slate-100 rounded-[3rem] cursor-pointer hover:border-indigo-600 hover:bg-indigo-50 transition-all font-black text-slate-300 hover:text-indigo-600 uppercase tracking-[0.3em] mb-10">Cliquer pour parcourir</label>
+            <button className="text-slate-400 font-black text-xs uppercase" onClick={() => setShowImportModal(false)}>Annuler</button>
           </div>
         </div>
       )}

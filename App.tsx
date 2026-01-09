@@ -55,13 +55,13 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Sync currentUser with real-time data to catch matchId updates
+  // Sync currentUser to catch real-time matchId updates
   useEffect(() => {
     if (currentUser) {
       const updated = users.find(u => u.id === currentUser.id);
       if (updated) setCurrentUser(updated);
     }
-  }, [users]);
+  }, [users, currentUser?.id]);
 
   const generateCode = (firstName: string, lastName: string) => {
     const p = firstName.trim().charAt(0).toUpperCase() || 'X';

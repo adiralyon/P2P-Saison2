@@ -14,7 +14,6 @@ type UserEntryMode = 'choice' | 'register' | 'login';
 
 /**
  * Utilitaire pour les alertes sonores haut de gamme, douces et mélodieuses.
- * Utilise la synthèse FM simple et des enveloppes de gain soignées.
  */
 const playNotificationSound = (type: 'start' | 'pause' | 'end') => {
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -25,42 +24,32 @@ const playNotificationSound = (type: 'start' | 'pause' | 'end') => {
   masterGain.connect(ctx.destination);
   const now = ctx.currentTime;
 
-  // Fonction pour créer une note "cloche douce"
   const playSoftBell = (freq: number, startTime: number, duration: number, volume = 0.05) => {
     const osc = ctx.createOscillator();
     const g = ctx.createGain();
-    
-    // Utilisation du triangle pour un son plus "rond" que le sinus pur mais moins agressif que le carré
     osc.type = 'triangle';
     osc.frequency.setValueAtTime(freq, startTime);
-    
-    // Enveloppe ADSR très douce
     g.gain.setValueAtTime(0, startTime);
-    g.gain.linearRampToValueAtTime(volume, startTime + 0.1); // Attaque douce de 100ms
-    g.gain.exponentialRampToValueAtTime(0.0001, startTime + duration); // Longue chute naturelle
-    
+    g.gain.linearRampToValueAtTime(volume, startTime + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
     osc.connect(g);
     g.connect(masterGain);
-    
     osc.start(startTime);
     osc.stop(startTime + duration);
   };
 
   if (type === 'start') {
-    // Accord de Quinte Juste Ascendant (C5 -> G5 -> C6) : Inspirant et clair
-    playSoftBell(523.25, now, 1.5, 0.06); // C5
-    playSoftBell(783.99, now + 0.15, 1.2, 0.04); // G5
-    playSoftBell(1046.50, now + 0.3, 1.0, 0.03); // C6
+    playSoftBell(523.25, now, 1.5, 0.06); 
+    playSoftBell(783.99, now + 0.15, 1.2, 0.04); 
+    playSoftBell(1046.50, now + 0.3, 1.0, 0.03); 
   } else if (type === 'pause') {
-    // Note de "Zen" descendante (E5 -> C5) : Calme et apaisant
-    playSoftBell(659.25, now, 1.2, 0.05); // E5
-    playSoftBell(523.25, now + 0.2, 1.5, 0.04); // C5
+    playSoftBell(659.25, now, 1.2, 0.05); 
+    playSoftBell(523.25, now + 0.2, 1.5, 0.04); 
   } else if (type === 'end') {
-    // Accord de Neuvième (G4 -> B4 -> D5 -> A5) : Riche, finalité douce
-    playSoftBell(392.00, now, 2.0, 0.04); // G4
-    playSoftBell(493.88, now + 0.05, 1.8, 0.03); // B4
-    playSoftBell(587.33, now + 0.1, 1.6, 0.03); // D5
-    playSoftBell(880.00, now + 0.15, 1.4, 0.02); // A5
+    playSoftBell(392.00, now, 2.0, 0.04); 
+    playSoftBell(493.88, now + 0.05, 1.8, 0.03); 
+    playSoftBell(587.33, now + 0.1, 1.6, 0.03); 
+    playSoftBell(880.00, now + 0.15, 1.4, 0.02); 
   }
 };
 
@@ -108,7 +97,6 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // Gestion des alertes sonores lors du changement de round
   useEffect(() => {
     if (prevRoundRef.current !== currentRound && currentRound !== null && currentUser) {
       if (currentRound > 0) playNotificationSound('start');
@@ -161,6 +149,83 @@ const App: React.FC = () => {
         setCurrentUser(userToSave);
       }
       setUserState('SCHEDULE');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  /**
+   * Algorithme de Matching Automatique par Expertises
+   */
+  const runAutoMatch = async (incremental: boolean = false) => {
+    setIsSyncing(true);
+    try {
+      const existingMeetings = incremental ? [...meetings] : [];
+      const newMeetings: Meeting[] = incremental ? [...meetings] : [];
+      const roundTableCounters: Record<number, number> = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1 };
+      const userRoundSchedules: Record<string, Set<number>> = {};
+      
+      users.forEach(u => userRoundSchedules[u.id] = new Set());
+
+      if (incremental) {
+        existingMeetings.forEach(m => {
+          userRoundSchedules[m.participant1Id]?.add(m.round);
+          userRoundSchedules[m.participant2Id]?.add(m.round);
+          if (roundTableCounters[m.round] <= m.tableNumber) {
+            roundTableCounters[m.round] = m.tableNumber + 1;
+          }
+        });
+      }
+
+      // 1. Identifier toutes les paires possibles avec au moins une expertise commune
+      const possiblePairs: { u1: User, u2: User, category: ProfessionalCategory }[] = [];
+      for (let i = 0; i < users.length; i++) {
+        for (let j = i + 1; j < users.length; j++) {
+          const alreadyMatched = incremental && existingMeetings.some(m => 
+            (m.participant1Id === users[i].id && m.participant2Id === users[j].id) ||
+            (m.participant1Id === users[j].id && m.participant2Id === users[i].id)
+          );
+          if (!alreadyMatched) {
+            const u1Cats = users[i].categories || [];
+            const u2Cats = users[j].categories || [];
+            const common = u1Cats.filter(c => u2Cats.includes(c));
+            if (common.length > 0) {
+              possiblePairs.push({ u1: users[i], u2: users[j], category: common[0] });
+            }
+          }
+        }
+      }
+
+      // 2. Mélanger pour l'aléa
+      possiblePairs.sort(() => Math.random() - 0.5);
+
+      // 3. Assigner les paires aux rounds disponibles
+      for (const pair of possiblePairs) {
+        for (let round = 1; round <= 7; round++) {
+          if (!userRoundSchedules[pair.u1.id].has(round) && !userRoundSchedules[pair.u2.id].has(round)) {
+            newMeetings.push({
+              id: `m-${pair.u1.id}-${pair.u2.id}-${round}`,
+              participant1Id: pair.u1.id,
+              participant2Id: pair.u2.id,
+              tableNumber: roundTableCounters[round]++,
+              scheduledTime: "", 
+              round: round,
+              category: pair.category,
+              status: 'scheduled',
+              ratings: []
+            });
+            userRoundSchedules[pair.u1.id].add(round);
+            userRoundSchedules[pair.u2.id].add(round);
+            break; 
+          }
+        }
+      }
+
+      await dbService.saveMeetings(newMeetings);
+      alert(incremental ? "Planning actualisé avec les nouveaux arrivants." : "Planning complet généré !");
+    } catch (e) {
+      console.error("Erreur Matching:", e);
+      alert("Erreur lors de la génération du planning.");
     } finally {
       setIsSyncing(false);
     }
@@ -471,8 +536,8 @@ const App: React.FC = () => {
             currentRound={currentRound}
             onUpdateUsers={(u) => dbService.syncAllUsers(u)} 
             onDeleteUser={(id) => dbService.deleteUser(id)}
-            onAutoMatch={() => {}} 
-            onIncrementalMatch={() => {}}
+            onAutoMatch={() => runAutoMatch(false)} 
+            onIncrementalMatch={() => runAutoMatch(true)}
             onManualMatch={(m) => dbService.updateMeeting(m.id, m)} 
             onSetCurrentRound={(r) => dbService.setCurrentRound(r)}
             onResetAll={() => dbService.resetAll()} 

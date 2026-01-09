@@ -69,6 +69,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const generateCode = (firstName: string, lastName: string) => {
+    const p = firstName.trim().charAt(0).toUpperCase() || 'X';
+    const n = lastName.trim().slice(0, 3).toUpperCase().padEnd(3, 'X');
+    return `${p}-${n}`;
+  };
+
   const openAdd = () => {
     setFormData({ firstName: '', lastName: '', company: '', role: '', categories: [ProfessionalCategory.DSI], bio: '' });
     setEditingUser(null);
@@ -132,8 +138,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const lName = (row[nomKey || ''] || '').toString().trim();
         const fullName = `${fName} ${lName}`.trim();
 
-        // Génération du code de connexion (4 premières lettres du nom)
-        const code = lName.slice(0, 4).toUpperCase().padEnd(4, 'X');
+        // Nouveau format de code P-NOM
+        const code = generateCode(fName, lName);
 
         return {
           id: `u-${Math.random().toString(36).substr(2, 9)}`,
@@ -173,8 +179,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
     const fullName = `${formData.firstName} ${formData.lastName}`.trim();
-    // Génération automatique du code si manquant
-    const code = formData.lastName?.slice(0, 4).toUpperCase().padEnd(4, 'X');
+    // Nouveau format de code P-NOM
+    const code = generateCode(formData.firstName || '', formData.lastName || '');
     
     if (editingUser) {
       onUpdateUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...formData, name: fullName, connectionCode: u.connectionCode || code } as User : u));

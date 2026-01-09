@@ -55,6 +55,12 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const generateCode = (firstName: string, lastName: string) => {
+    const p = firstName.trim().charAt(0).toUpperCase() || 'X';
+    const n = lastName.trim().slice(0, 3).toUpperCase().padEnd(3, 'X');
+    return `${p}-${n}`;
+  };
+
   const handleRegister = async (newUser: User) => {
     setIsSyncing(true);
     try {
@@ -62,7 +68,7 @@ const App: React.FC = () => {
       if (exists) {
         setCurrentUser(exists);
       } else {
-        const code = newUser.lastName.slice(0, 4).toUpperCase().padEnd(4, 'X');
+        const code = generateCode(newUser.firstName, newUser.lastName);
         const userToSave = { ...newUser, connectionCode: code };
         await dbService.saveUser(userToSave);
         setCurrentUser(userToSave);
@@ -345,12 +351,13 @@ const App: React.FC = () => {
                     <h3 className="text-3xl font-black text-slate-900 mb-8 uppercase">Identification</h3>
                     <form onSubmit={handleLoginByCode} className="space-y-8">
                       <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Votre Code (ex: DUPONT -> DUPO)</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Votre Code (ex: Jean DUPONT -> J-DUP)</label>
                         <input 
                           type="text" 
                           required 
-                          maxLength={4}
-                          className={`w-full h-20 text-center text-4xl font-black tracking-[0.4em] bg-slate-50 border-4 rounded-3xl outline-none transition-all ${loginError ? 'border-rose-500 animate-shake' : 'border-slate-100 focus:border-indigo-600'}`}
+                          maxLength={5}
+                          placeholder="P-NOM"
+                          className={`w-full h-20 text-center text-4xl font-black tracking-[0.2em] bg-slate-50 border-4 rounded-3xl outline-none transition-all placeholder:text-slate-100 ${loginError ? 'border-rose-500 animate-shake' : 'border-slate-100 focus:border-indigo-600'}`}
                           value={loginCode}
                           onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
                         />

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { User, Meeting, ProfessionalCategory } from '../types';
+import { User, Meeting, ProfessionalCategory, Rating } from '../types';
 import { Button } from './Button';
 import { dbService } from '../services/database';
 
@@ -24,6 +24,11 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
   });
   const [error, setError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // État pour l'édition des notes
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
+  const [tempScore, setTempScore] = useState<number>(0);
+  const [tempComment, setTempComment] = useState<string>('');
 
   const myMeetings = meetings
     .filter(m => m.participant1Id === currentUser.id || m.participant2Id === currentUser.id)
@@ -55,7 +60,6 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
       return;
     }
 
-    // Vérifier l'unicité du code
     const isTaken = users.some(u => u.id !== currentUser.id && u.connectionCode?.toUpperCase() === code);
     if (isTaken) {
       setError('Ce code d\'identification est déjà utilisé par un autre pair');
@@ -74,6 +78,52 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
       setError('');
     } catch (e) {
       setError('Erreur lors de la sauvegarde sur le serveur');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const startEditRating = (m: Meeting, r: Rating | undefined) => {
+    setEditingMeetingId(m.id);
+    setTempScore(r?.score || 0);
+    setTempComment(r?.comment || '');
+  };
+
+  const saveEditedRating = async (meetingId: string) => {
+    const meeting = meetings.find(m => m.id === meetingId);
+    if (!meeting) return;
+
+    setIsSaving(true);
+    try {
+      const otherParticipant = getOtherParticipant(meeting);
+      if (!otherParticipant) return;
+
+      const otherRatings = (meeting.ratings || []).filter(r => r.fromId !== currentUser.id);
+      const newRating: Rating = {
+        meetingId,
+        fromId: currentUser.id,
+        toId: otherParticipant.id,
+        score: tempScore,
+        comment: tempComment
+      };
+      
+      const updatedRatings = [...otherRatings, newRating];
+      await dbService.updateMeeting(meetingId, { ratings: updatedRatings });
+
+      // Recalculer la moyenne du destinataire
+      const allMeetings = meetings.map(m => m.id === meetingId ? { ...m, ratings: updatedRatings } : m);
+      const allRatingsToOther = allMeetings
+        .flatMap(m => m.ratings || [])
+        .filter(r => r.toId === otherParticipant.id);
+      
+      const avg = allRatingsToOther.length > 0 
+        ? allRatingsToOther.reduce((acc, curr) => acc + curr.score, 0) / allRatingsToOther.length
+        : 0;
+
+      await dbService.updateUser(otherParticipant.id, { avgScore: avg });
+      setEditingMeetingId(null);
+    } catch (e) {
+      console.error("Erreur update rating:", e);
     } finally {
       setIsSaving(false);
     }
@@ -122,11 +172,7 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
               </div>
             </div>
 
-            <div className="bg-white/5 border border-white/10 rounded-3xl p-6 text-center min-w-[120px]">
-              <p className="text-[9px] font-black text-white/40 uppercase tracking-widest mb-1">Score Global</p>
-              <p className="text-4xl font-black text-amber-400">{currentUser.avgScore.toFixed(1)}</p>
-              <p className="text-[10px] font-bold text-white/20 uppercase tracking-widest">/ 5.0</p>
-            </div>
+            {/* Score global retiré ici */}
           </div>
         ) : (
           <form onSubmit={handleSaveProfile} className="relative z-10 space-y-8 animate-in fade-in duration-300">
@@ -248,6 +294,8 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
               myMeetings.map((m) => {
                 const other = getOtherParticipant(m);
                 const rating = getMyRating(m);
+                const isEditingThis = editingMeetingId === m.id;
+
                 return (
                   <div key={m.id} className="bg-white rounded-[3rem] p-10 shadow-xl shadow-indigo-500/5 border border-slate-100 flex flex-col md:flex-row items-center gap-10 group hover:scale-[1.01] transition-transform">
                     <div className="relative">
@@ -273,15 +321,51 @@ export const Synthesis: React.FC<SynthesisProps> = ({ currentUser, meetings, use
                       </div>
                     </div>
 
-                    <div className="w-full md:w-48 bg-slate-50 p-6 rounded-[2rem] text-center space-y-2 border border-slate-100">
+                    <div className="w-full md:w-64 bg-slate-50 p-6 rounded-[2rem] text-center space-y-4 border border-slate-100">
                       <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Votre Note</p>
-                      <div className="text-3xl font-black text-amber-400">
-                        {rating ? "★".repeat(rating.score) + "☆".repeat(5 - rating.score) : "---"}
-                      </div>
-                      {rating?.comment && (
-                        <p className="text-[10px] font-medium italic text-slate-500 line-clamp-2">
-                          "{rating.comment}"
-                        </p>
+                      
+                      {isEditingThis ? (
+                        <div className="space-y-4">
+                          <div className="flex justify-center space-x-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                onClick={() => setTempScore(star)}
+                                className={`text-2xl transition-all ${tempScore >= star ? 'text-amber-400 scale-110' : 'text-slate-200'}`}
+                              >
+                                ★
+                              </button>
+                            ))}
+                          </div>
+                          <textarea 
+                            className="w-full text-[10px] p-2 bg-white border rounded-xl outline-none focus:border-indigo-500"
+                            rows={2}
+                            value={tempComment}
+                            onChange={(e) => setTempComment(e.target.value)}
+                            placeholder="Commentaire..."
+                          />
+                          <div className="flex gap-2">
+                            <Button size="sm" className="flex-1 rounded-lg text-[9px] font-black" onClick={() => saveEditedRating(m.id)} isLoading={isSaving}>Sauver</Button>
+                            <button className="text-[9px] font-bold text-slate-400 uppercase" onClick={() => setEditingMeetingId(null)}>Annuler</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <div className="text-3xl font-black text-amber-400">
+                            {rating ? "★".repeat(rating.score) + "☆".repeat(5 - rating.score) : "---"}
+                          </div>
+                          {rating?.comment && (
+                            <p className="text-[10px] font-medium italic text-slate-500 line-clamp-2">
+                              "{rating.comment}"
+                            </p>
+                          )}
+                          <button 
+                            className="text-[9px] font-black text-indigo-600 uppercase tracking-widest hover:underline"
+                            onClick={() => startEditRating(m, rating)}
+                          >
+                            ✏️ Modifier ma note
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

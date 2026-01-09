@@ -10,25 +10,28 @@ interface AdminDashboardProps {
   adminState: AdminSubState;
   onUpdateUsers: (users: User[]) => void;
   onAutoMatch: () => void;
+  onIncrementalMatch: () => void;
   onManualMatch: (m: Meeting) => void;
   onResetAll: () => void;
 }
 
-type SortField = 'name' | 'role' | 'expertise' | 'score';
+type SortField = 'firstName' | 'lastName' | 'role' | 'company';
 type SortOrder = 'asc' | 'desc';
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ 
-  users, 
-  meetings,
+  users = [], 
+  meetings = [],
   adminState,
   onUpdateUsers,
   onAutoMatch,
+  onIncrementalMatch,
   onManualMatch,
   onResetAll
 }) => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [importText, setImportText] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -36,16 +39,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterRound, setFilterRound] = useState<string>('all');
   
-  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortField, setSortField] = useState<SortField>('lastName');
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   
   const [formData, setFormData] = useState<Partial<User>>({
-    name: '',
+    firstName: '',
+    lastName: '',
     company: '',
     role: '',
     categories: [ProfessionalCategory.DSI],
     bio: ''
   });
+
+  const openAdd = () => {
+    setFormData({ 
+      firstName: '', 
+      lastName: '', 
+      company: '', 
+      role: '', 
+      categories: [ProfessionalCategory.DSI], 
+      bio: '' 
+    });
+    setEditingUser(null);
+    setShowAddModal(true);
+  };
+
+  const openEdit = (user: User) => {
+    setFormData({ 
+      firstName: user.firstName, 
+      lastName: user.lastName, 
+      company: user.company, 
+      role: user.role, 
+      categories: user.categories, 
+      bio: user.bio 
+    });
+    setEditingUser(user);
+    setShowAddModal(true);
+  };
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -57,15 +87,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const sortedUsers = useMemo(() => {
+    if (!users || !Array.isArray(users)) return [];
     return [...users].sort((a, b) => {
-      let valA: any = a[sortField as keyof User] || '';
-      let valB: any = b[sortField as keyof User] || '';
-
-      if (sortField === 'expertise') {
-        valA = a.categories[0] || '';
-        valB = b.categories[0] || '';
-      }
-
+      let valA: any = a[sortField] || '';
+      let valB: any = b[sortField] || '';
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
@@ -73,160 +98,89 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   }, [users, sortField, sortOrder]);
 
   const processImportData = (data: any[]) => {
-    const newUsers: User[] = data.map((row, index) => {
-      // Cherche les colonnes Nom et Prénom (insensible à la casse)
-      const keys = Object.keys(row);
-      const nomKey = keys.find(k => k.toLowerCase().includes('nom')) || 'Nom';
-      const prenomKey = keys.find(k => k.toLowerCase().includes('prénom') || k.toLowerCase().includes('prenom')) || 'Prénom';
-      
-      const nom = row[nomKey] || '';
-      const prenom = row[prenomKey] || `User ${index + 1}`;
-      
-      return {
-        id: `u-${Math.random().toString(36).substr(2, 9)}`,
-        name: `${prenom} ${nom}`.trim(),
-        company: row['Entreprise'] || row['Société'] || 'À compléter',
-        role: row['Fonction'] || row['Poste'] || 'Consultant / Expert',
-        categories: [ProfessionalCategory.AUTRE],
-        bio: row['Bio'] || 'Profil importé via Excel.',
-        avatar: `https://picsum.photos/seed/${nom}${prenom}${index}/200`,
-        avgScore: 0
-      };
-    }).filter(u => u.name.length > 2);
+    try {
+      const newUsers: User[] = data.map((row, index) => {
+        const keys = Object.keys(row);
+        const prenomKey = keys.find(k => ['prénom', 'prenom', 'first name', 'firstname'].includes(k.toLowerCase().trim()));
+        const nomKey = keys.find(k => ['nom', 'last name', 'lastname'].includes(k.toLowerCase().trim()) && k !== prenomKey);
+        
+        const fName = (row[prenomKey || ''] || '').toString().trim();
+        const lName = (row[nomKey || ''] || '').toString().trim();
+        const fullName = `${fName} ${lName}`.trim();
 
-    if (newUsers.length > 0) {
-      onUpdateUsers([...newUsers, ...users]);
+        return {
+          id: `u-${Math.random().toString(36).substr(2, 9)}`,
+          firstName: fName || 'Prénom',
+          lastName: lName || 'Nom',
+          name: fullName || `Pair ${index + 1}`,
+          company: row['Entreprise'] || row['Société'] || row['Company'] || 'À compléter',
+          role: row['Fonction'] || row['Poste'] || row['Job'] || 'Pair',
+          categories: [ProfessionalCategory.AUTRE],
+          bio: row['Bio'] || 'Profil importé.',
+          avatar: `https://picsum.photos/seed/${fullName}${index}/200`,
+          avgScore: 0
+        };
+      }).filter(u => u.lastName.length > 0 || u.firstName.length > 0);
+
+      onUpdateUsers([...users, ...newUsers]);
       setShowImportModal(false);
-      alert(`${newUsers.length} contacts importés avec succès.`);
-    } else {
-      alert("Aucune donnée valide trouvée. Vérifiez que votre fichier contient des colonnes 'Nom' et 'Prénom'.");
+    } catch (e) {
+      alert("Erreur lors de l'import.");
     }
   };
 
   const handleExcelImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    setIsImporting(true);
     const reader = new FileReader();
     reader.onload = (evt) => {
-      try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
-        const wsname = wb.SheetNames[0];
-        const ws = wb.Sheets[wsname];
-        const data = XLSX.utils.sheet_to_json(ws);
-        processImportData(data);
-      } catch (err) {
-        console.error(err);
-        alert("Erreur lors de la lecture du fichier Excel.");
-      } finally {
-        setIsImporting(false);
-        if (fileInputRef.current) fileInputRef.current.value = '';
-      }
+      const bstr = evt.target?.result;
+      const wb = XLSX.read(bstr, { type: 'binary' });
+      const data = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+      processImportData(data);
     };
     reader.readAsBinaryString(file);
   };
 
-  const handleTextImport = () => {
-    const lines = importText.split('\n').filter(l => l.trim().includes(','));
-    const data = lines.map(line => {
-      const [nom, prenom] = line.split(',').map(s => s.trim());
-      return { Nom: nom, Prénom: prenom };
-    });
-    processImportData(data);
-    setImportText('');
-  };
-
-  const deleteUser = (id: string) => {
-    if (confirm("Supprimer définitivement ce pair ?")) {
-      onUpdateUsers(users.filter(u => u.id !== id));
-    }
-  };
-  
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.categories || formData.categories.length === 0) {
-      alert("At least one category required.");
-      return;
-    }
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
     if (editingUser) {
-      onUpdateUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...formData } as User : u));
+      onUpdateUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...formData, name: fullName } as User : u));
     } else {
-      const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
-        avgScore: 0,
-        avatar: `https://picsum.photos/seed/${formData.name}/200`,
-        ...formData
+      const newUser: User = { 
+        id: Math.random().toString(36).substr(2, 9), 
+        avgScore: 0, 
+        avatar: `https://picsum.photos/seed/${fullName}/200`, 
+        ...formData,
+        name: fullName 
       } as User;
-      onUpdateUsers([newUser, ...users]);
+      onUpdateUsers([...users, newUser]);
     }
     setEditingUser(null);
     setShowAddModal(false);
-    resetForm();
   };
 
-  const resetForm = () => {
-    setFormData({
-      name: '',
-      company: '',
-      role: '',
-      categories: [ProfessionalCategory.DSI],
-      bio: ''
-    });
-  };
-
-  const openEdit = (u: User) => {
-    setEditingUser(u);
-    setFormData(u);
-    setShowAddModal(true);
-  };
-
-  const openAdd = () => {
-    setEditingUser(null);
-    resetForm();
-    setShowAddModal(true);
-  };
-
-  const toggleCategory = (cat: ProfessionalCategory) => {
-    setFormData(prev => {
-      const current = prev.categories || [];
-      const isSelected = current.includes(cat);
-      if (isSelected) {
-        return { ...prev, categories: current.filter(c => c !== cat) };
-      } else {
-        return { ...prev, categories: [...current, cat] };
-      }
-    });
-  };
-
-  const filteredMeetings = useMemo(() => {
-    return meetings.filter(m => {
+  const meetingsByRound = useMemo(() => {
+    const rounds: Record<number, Meeting[]> = {};
+    const filtered = meetings.filter(m => {
       const catMatch = filterCategory === 'all' || m.category === filterCategory;
       const roundMatch = filterRound === 'all' || m.round === parseInt(filterRound);
       return catMatch && roundMatch;
     });
-  }, [meetings, filterCategory, filterRound]);
-
-  const meetingsByRound = useMemo(() => {
-    const rounds: Record<number, Meeting[]> = {};
-    filteredMeetings.forEach(m => {
+    filtered.forEach(m => {
       if (!rounds[m.round]) rounds[m.round] = [];
       rounds[m.round].push(m);
     });
+    Object.keys(rounds).forEach(r => rounds[parseInt(r)].sort((a, b) => a.tableNumber - b.tableNumber));
     return Object.entries(rounds).sort(([a], [b]) => parseInt(a) - parseInt(b));
-  }, [filteredMeetings]);
+  }, [meetings, filterCategory, filterRound]);
 
   const duos = useMemo(() => {
     return meetings
-      .filter(m => m.ratings.length === 2)
-      .map(m => {
-        const p1 = users.find(u => u.id === m.participant1Id);
-        const p2 = users.find(u => u.id === m.participant2Id);
-        const avg = (m.ratings[0].score + m.ratings[1].score) / 2;
-        return { p1, p2, avg, m };
-      })
-      .sort((a, b) => b.avg - a.avg);
+      .filter(m => m.status === 'completed' && (m.ratings?.length || 0) > 0)
+      .map(m => ({ p1: users.find(u => u.id === m.participant1Id), p2: users.find(u => u.id === m.participant2Id), m }))
+      .filter(d => d.p1 && d.p2);
   }, [meetings, users]);
 
   return (
@@ -234,186 +188,124 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* Import Modal */}
       {showImportModal && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4">
-          <div className="bg-white rounded-[2rem] shadow-2xl p-6 md:p-10 max-w-xl w-full animate-in zoom-in-95">
-            <h3 className="text-2xl font-black text-slate-900 mb-2 uppercase">Import de Contacts</h3>
-            <p className="text-slate-500 text-xs mb-8">Format recommandé : .xlsx ou .csv avec colonnes <b>Nom, Prénom</b>.</p>
-            
+          <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-12 max-w-2xl w-full">
+            <h3 className="text-3xl font-black text-slate-900 mb-6 uppercase">Import de Contacts</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-              {/* Excel Import Area */}
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Option 1 : Excel / CSV</label>
-                <div 
-                  onClick={() => fileInputRef.current?.click()}
-                  className="h-40 border-2 border-dashed border-indigo-100 rounded-3xl bg-indigo-50/30 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-50 hover:border-indigo-300 transition-all group"
-                >
-                  <div className="w-12 h-12 bg-white rounded-2xl shadow-sm flex items-center justify-center text-2xl mb-3 group-hover:scale-110 transition-transform">📊</div>
-                  <p className="text-xs font-black text-indigo-600 uppercase tracking-widest">Choisir un fichier</p>
-                  <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    accept=".xlsx, .xls, .csv" 
-                    onChange={handleExcelImport}
-                  />
-                </div>
+              <div onClick={() => fileInputRef.current?.click()} className="h-48 border-4 border-dashed border-indigo-50 rounded-[2rem] bg-indigo-50/20 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-50 transition-all">
+                <div className="text-4xl mb-4">📊</div>
+                <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Excel / CSV</p>
+                <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelImport} />
               </div>
-
-              {/* Text Import Area */}
-              <div className="space-y-4">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Option 2 : Copier/Coller</label>
-                <textarea
-                  className="w-full p-4 bg-slate-50 border border-slate-100 rounded-3xl h-40 font-mono text-[10px] focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                  placeholder="Dupont, Jean&#10;Martin, Alice"
-                  value={importText}
-                  onChange={(e) => setImportText(e.target.value)}
-                />
-              </div>
+              <textarea className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[2rem] h-48 font-mono text-[10px] outline-none" placeholder="Prénom, Nom (par ligne)" value={importText} onChange={(e) => setImportText(e.target.value)} />
             </div>
-
-            <div className="flex space-x-3">
-              <Button onClick={handleTextImport} disabled={!importText.trim()} className="flex-1 h-14 rounded-2xl font-black uppercase tracking-widest text-xs">Importer le texte</Button>
-              <Button variant="outline" onClick={() => setShowImportModal(false)} className="h-14 rounded-2xl font-black uppercase tracking-widest text-xs">Annuler</Button>
+            <div className="flex space-x-4">
+              <Button onClick={() => {
+                const lines = importText.split('\n').filter(l => l.trim().length > 0);
+                processImportData(lines.map(l => l.includes(',') ? { 'Prénom': l.split(',')[0], 'Nom': l.split(',')[1] } : { 'Prénom': l.trim() }));
+                setImportText('');
+              }} className="flex-1 h-16 rounded-2xl font-black uppercase text-xs">Importer</Button>
+              <Button variant="outline" onClick={() => setShowImportModal(false)} className="h-16 px-10 rounded-2xl font-black uppercase text-xs">Fermer</Button>
             </div>
-            
-            {isImporting && (
-              <div className="mt-4 text-center text-[10px] font-black text-indigo-500 animate-pulse uppercase tracking-widest">Traitement en cours...</div>
-            )}
           </div>
         </div>
       )}
 
-      {/* Add/Edit Modal (same as before) */}
+      {/* Add/Edit Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4 overflow-y-auto">
-          <div className="bg-white rounded-[2rem] shadow-2xl p-6 md:p-10 max-w-lg w-full animate-in zoom-in-95 duration-200 border border-white/20 my-auto">
-            <h3 className="text-2xl md:text-3xl font-black text-slate-900 mb-6 tracking-tighter uppercase">
-              {editingUser ? "ÉDITER LE PROFIL" : "NOUVEAU PAIR"}
-            </h3>
-            <form onSubmit={handleSaveUser} className="space-y-4 md:space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nom Complet</label>
-                  <input
-                    className="w-full p-3 md:p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
-                    value={formData.name}
-                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 overflow-y-auto">
+          <div className="bg-white rounded-[3rem] shadow-2xl p-10 max-w-3xl w-full my-8">
+            <h3 className="text-3xl font-black text-slate-900 mb-8 uppercase italic">{editingUser ? 'Modifier le Pair' : 'Nouveau Pair'}</h3>
+            <form onSubmit={handleSaveUser} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Prénom</label>
+                  <input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })} />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Entreprise</label>
-                  <input
-                    className="w-full p-3 md:p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
-                    value={formData.company}
-                    onChange={e => setFormData({ ...formData, company: e.target.value })}
-                    required
-                  />
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Nom</label>
+                  <input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })} />
                 </div>
               </div>
-              
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Fonction</label>
-                <input
-                  className="w-full p-3 md:p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-bold"
-                  value={formData.role}
-                  onChange={e => setFormData({ ...formData, role: e.target.value })}
-                  required
-                />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Entreprise</label>
+                  <input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Fonction</label>
+                  <input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })} />
+                </div>
               </div>
-
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Catégories</label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-32 overflow-y-auto p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                  {Object.values(ProfessionalCategory).map(c => (
-                    <label key={c} className="flex items-center space-x-2 text-xs font-bold text-slate-700 bg-white p-2 rounded-lg border border-slate-100 cursor-pointer">
-                      <input 
-                        type="checkbox"
-                        className="rounded text-indigo-600 focus:ring-indigo-500"
-                        checked={(formData.categories || []).includes(c)}
-                        onChange={() => toggleCategory(c)}
-                      />
-                      <span className="truncate">{c}</span>
+              <div className="space-y-4">
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Expertises (Multi-choix)</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                  {Object.values(ProfessionalCategory).map(cat => (
+                    <label key={cat} className="flex items-center space-x-3 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-indigo-300">
+                      <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={formData.categories?.includes(cat)} onChange={() => {
+                        const cats = formData.categories || [];
+                        setFormData({ ...formData, categories: cats.includes(cat) ? cats.filter(c => c !== cat) : [...cats, cat] });
+                      }} />
+                      <span className="text-xs font-bold text-slate-700 truncate">{cat}</span>
                     </label>
                   ))}
                 </div>
               </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Expertise & Bio</label>
-                <textarea
-                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all font-medium italic"
-                  rows={2}
-                  value={formData.bio}
-                  onChange={e => setFormData({ ...formData, bio: e.target.value })}
-                />
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Bio & Centres d'Intérêt</label>
+                <textarea className="w-full p-4 md:p-6 rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none font-medium italic text-slate-700 text-sm" rows={3} value={formData.bio} onChange={e => setFormData({ ...formData, bio: e.target.value })} />
               </div>
-
-              <div className="flex space-x-3 pt-4">
-                <Button type="submit" className="flex-1 h-12 md:h-14 rounded-2xl font-black uppercase tracking-widest text-sm">Enregistrer</Button>
-                <Button type="button" variant="outline" className="h-12 md:h-14 rounded-2xl font-black uppercase tracking-widest text-sm" onClick={() => setShowAddModal(false)}>Annuler</Button>
+              <div className="flex space-x-3 pt-6">
+                <Button type="submit" className="flex-1 h-16 rounded-2xl font-black uppercase tracking-widest shadow-xl">Sauvegarder</Button>
+                <Button variant="outline" onClick={() => setShowAddModal(false)} className="h-16 px-10 rounded-2xl font-black uppercase text-xs tracking-widest">Annuler</Button>
               </div>
             </form>
           </div>
         </div>
       )}
 
+      {/* PROFILES TAB */}
       {adminState === 'PROFILES' && (
-        <div className="bg-white rounded-3xl md:rounded-[2.5rem] shadow-sm border border-slate-100 overflow-hidden">
-          <div className="p-6 md:p-8 border-b border-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-50/30">
+        <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden">
+          <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-50/30">
             <div>
-              <h3 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tighter uppercase">LES PAIRS</h3>
-              <p className="text-slate-500 font-medium text-sm md:text-base">{users.length} profils enregistrés.</p>
+              <h3 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Les Pairs</h3>
+              <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-2">{users.length} inscrits synchronisés</p>
             </div>
-            <div className="flex flex-wrap gap-2 w-full md:w-auto">
-               <Button variant="outline" size="sm" className="flex-1 md:flex-none rounded-xl font-bold flex items-center justify-center space-x-2" onClick={() => setShowImportModal(true)}>
-                 <span>📥</span>
-                 <span>Import Excel / CSV</span>
-               </Button>
-               <Button size="sm" className="flex-1 md:flex-none rounded-xl font-black uppercase tracking-widest" onClick={openAdd}>Nouveau</Button>
-               <Button variant="danger" size="sm" className="flex-none rounded-xl font-bold" onClick={onResetAll}>Reset</Button>
+            <div className="flex gap-3">
+               <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={() => setShowImportModal(true)}>Import</Button>
+               <Button size="sm" className="rounded-xl font-black uppercase px-8 shadow-xl" onClick={openAdd}>Ajouter</Button>
+               <Button variant="danger" size="sm" className="rounded-xl font-bold px-6" onClick={() => { if(confirm("Supprimer TOUS les contacts et matchs ?")) onResetAll(); }}>Reset All</Button>
             </div>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left min-w-[700px]">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th onClick={() => handleSort('name')} className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] cursor-pointer hover:text-indigo-600 transition-colors">
-                    Pair {sortField === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th onClick={() => handleSort('role')} className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] cursor-pointer hover:text-indigo-600 transition-colors">
-                    Fonction {sortField === 'role' && (sortOrder === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th onClick={() => handleSort('expertise')} className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] cursor-pointer hover:text-indigo-600 transition-colors">
-                    Expertise {sortField === 'expertise' && (sortOrder === 'asc' ? '↑' : '↓')}
-                  </th>
-                  <th className="px-6 md:px-8 py-5 text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] text-right">Actions</th>
+            <table className="w-full text-left">
+              <thead className="bg-slate-50/50">
+                <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                  <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('firstName')}>Prénom</th>
+                  <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('lastName')}>Nom</th>
+                  <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('role')}>Fonction</th>
+                  <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('company')}>Entreprise</th>
+                  <th className="px-10 py-6">Expertises</th>
+                  <th className="px-10 py-6 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-slate-100">
                 {sortedUsers.map(u => (
-                  <tr key={u.id} className="hover:bg-indigo-50/30 transition-colors group">
-                    <td className="px-6 md:px-8 py-4 md:py-6">
-                      <div className="flex items-center space-x-3 md:space-x-5">
-                        <img src={u.avatar} className="w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl shadow-md border-2 border-white group-hover:scale-110 transition-transform" />
-                        <div>
-                          <p className="font-black text-slate-900 text-sm md:text-lg leading-none mb-1">{u.name}</p>
-                          <p className="text-[10px] md:text-xs text-slate-500 font-bold">{u.company}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 md:px-8 py-4 md:py-6">
-                       <p className="text-xs md:text-sm font-bold text-slate-700">{u.role}</p>
-                    </td>
-                    <td className="px-6 md:px-8 py-4 md:py-6">
-                      <div className="flex flex-wrap gap-1 max-w-[150px] md:max-w-xs">
-                        {u.categories.map(cat => (
-                          <span key={cat} className="text-[8px] md:text-[9px] font-black text-indigo-700 bg-indigo-50 px-2 py-1 rounded-full border border-indigo-100/50 uppercase tracking-widest truncate">{cat}</span>
+                  <tr key={u.id} className="hover:bg-indigo-50/20 transition-colors group">
+                    <td className="px-10 py-6 font-bold text-slate-900">{u.firstName}</td>
+                    <td className="px-10 py-6 font-black text-slate-900 uppercase tracking-tight">{u.lastName}</td>
+                    <td className="px-10 py-6 text-sm font-medium text-slate-600">{u.role}</td>
+                    <td className="px-10 py-6 text-sm font-bold text-indigo-600">{u.company}</td>
+                    <td className="px-10 py-6">
+                      <div className="flex flex-wrap gap-1">
+                        {(u.categories || []).map(cat => (
+                          <span key={cat} className="text-[7px] font-black text-indigo-700 bg-white px-2 py-1 rounded-full border border-indigo-100 uppercase">{cat}</span>
                         ))}
                       </div>
                     </td>
-                    <td className="px-6 md:px-8 py-4 md:py-6 text-right space-x-3">
-                      <button onClick={() => openEdit(u)} className="text-indigo-600 hover:text-indigo-800 text-[10px] font-black uppercase tracking-widest">Éditer</button>
-                      <button onClick={() => deleteUser(u.id)} className="text-rose-500 hover:text-rose-700 text-[10px] font-black uppercase tracking-widest">Suppr.</button>
+                    <td className="px-10 py-6 text-right space-x-4">
+                      <button onClick={() => openEdit(u)} className="text-indigo-600 font-black text-[10px] uppercase tracking-widest">Éditer</button>
+                      <button onClick={() => { if(confirm("Supprimer ce profil ?")) onUpdateUsers(users.filter(user => user.id !== u.id)); }} className="text-rose-500 font-black text-[10px] uppercase tracking-widest">Suppr</button>
                     </td>
                   </tr>
                 ))}
@@ -423,91 +315,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* PLANNING TAB */}
       {adminState === 'PLANNING' && (
-        <div className="space-y-6 md:space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <div className="bg-white p-6 md:p-10 rounded-3xl md:rounded-[2.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div className="text-center md:text-left">
-              <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter uppercase">PILOTAGE</h3>
-              <p className="text-slate-500 mt-2 text-sm md:text-lg font-medium">Matching par catégorie Saison 2.</p>
-            </div>
-            <Button size="lg" className="w-full md:w-auto h-16 md:h-20 px-12 text-lg md:text-xl font-black rounded-2xl md:rounded-3xl shadow-indigo-100 shadow-2xl uppercase tracking-widest" onClick={onAutoMatch}>Auto Matching</Button>
+        <div className="space-y-12">
+          <div className="bg-white p-12 rounded-[3.5rem] shadow-sm border border-slate-100 flex flex-col md:flex-row justify-between items-center gap-10">
+             <div className="text-center md:text-left">
+                <h3 className="text-5xl font-black text-slate-900 uppercase italic tracking-tighter">Pilotage Rounds</h3>
+                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-3">{meetings.length} matchs actifs</p>
+             </div>
+             <div className="flex flex-col sm:flex-row gap-4">
+                <Button size="lg" className="rounded-2xl h-18 px-12 font-black uppercase" onClick={onAutoMatch}>Reset & Relancer</Button>
+                <Button variant="secondary" size="lg" className="rounded-2xl h-18 px-12 font-black uppercase" onClick={onIncrementalMatch}>Actualiser Nouveaux</Button>
+             </div>
           </div>
-          
-          <div className="flex flex-col md:flex-row flex-wrap items-center gap-4 md:gap-6 bg-slate-900 p-6 md:p-8 rounded-3xl md:rounded-[2rem] text-white">
-            <div className="flex flex-col w-full md:flex-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-[0.2em] ml-1">Catégorie</label>
-              <select 
-                className="bg-white/10 border border-white/10 p-3 md:p-4 rounded-xl md:rounded-2xl text-xs md:text-sm font-black text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                value={filterCategory}
-                onChange={e => setFilterCategory(e.target.value)}
-              >
-                <option value="all" className="text-slate-900">Toutes</option>
-                {Object.values(ProfessionalCategory).map(c => <option key={c} value={c} className="text-slate-900">{c}</option>)}
-              </select>
-            </div>
-            <div className="flex flex-col w-full md:flex-1">
-              <label className="text-[10px] font-black text-slate-400 uppercase mb-2 tracking-[0.2em] ml-1">Session</label>
-              <select 
-                className="bg-white/10 border border-white/10 p-3 md:p-4 rounded-xl md:rounded-2xl text-xs md:text-sm font-black text-white outline-none focus:ring-2 focus:ring-indigo-500"
-                value={filterRound}
-                onChange={e => setFilterRound(e.target.value)}
-              >
-                <option value="all" className="text-slate-900">Tous les rounds</option>
-                {[1,2,3,4,5,6,7].map(r => <option key={r} value={r} className="text-slate-900">Round {r}</option>)}
-              </select>
-            </div>
-            <div className="w-full md:w-auto md:pt-6">
-              <span className="block text-center bg-indigo-600 px-6 py-3 rounded-xl md:rounded-2xl font-black text-xs uppercase tracking-widest">
-                {filteredMeetings.length} RDV
-              </span>
-            </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
+             <select value={filterRound} onChange={e => setFilterRound(e.target.value)} className="p-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-900 outline-none">
+               <option value="all">Tous les Rounds</option>
+               {[1,2,3,4,5,6,7].map(r => <option key={r} value={r}>Round {r}</option>)}
+             </select>
+             <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className="p-4 bg-slate-50 border-none rounded-2xl font-bold text-slate-900 outline-none">
+               <option value="all">Toutes les expertises</option>
+               {Object.values(ProfessionalCategory).map(c => <option key={c} value={c}>{c}</option>)}
+             </select>
           </div>
-
-          <div className="space-y-10 md:space-y-16">
+          <div className="grid grid-cols-1 gap-16">
             {meetingsByRound.map(([round, roundMeetings]) => (
-              <div key={round} className="space-y-6">
-                <div className="flex items-center space-x-4 md:space-x-6">
-                  <div className="bg-slate-900 text-white w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center font-black text-lg md:text-2xl shadow-xl">R{round}</div>
-                  <h4 className="text-xl md:text-3xl font-black text-slate-900 uppercase tracking-tighter">Round {round} <span className="text-slate-300 ml-1">({roundMeetings.length})</span></h4>
-                  <div className="flex-1 h-px bg-slate-100"></div>
+              <div key={round} className="space-y-8">
+                <div className="flex items-center space-x-6">
+                  <div className="bg-slate-900 text-white w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl rotate-3">R{round}</div>
+                  <h4 className="text-3xl font-black text-slate-900 uppercase italic">Round {round}</h4>
+                  <div className="h-px bg-slate-100 flex-1"></div>
                 </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
                   {roundMeetings.map(m => {
                     const u1 = users.find(u => u.id === m.participant1Id);
                     const u2 = users.find(u => u.id === m.participant2Id);
-                    const isOngoing = m.status === 'ongoing';
-                    const isCompleted = m.status === 'completed';
-                    
+                    const isSelected = selectedMeetingId === m.id;
+                    const status = m.status === 'completed' ? 'Fini' : (m.status === 'ongoing' ? 'En cours' : 'À lancer');
+                    const color = m.status === 'completed' ? 'bg-emerald-500' : (m.status === 'ongoing' ? 'bg-amber-500' : 'bg-slate-400');
                     return (
-                      <div key={m.id} className="bg-white p-5 md:p-6 rounded-[1.5rem] md:rounded-[2rem] border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-xl transition-all duration-300">
-                        <div className="absolute top-0 right-0 px-3 md:px-4 py-1.5 bg-slate-900 text-white text-[9px] md:text-[10px] font-black uppercase rounded-bl-xl md:rounded-bl-2xl z-10">T{m.tableNumber}</div>
-                        <div className="mb-3">
-                          <span className="text-[8px] md:text-[9px] font-black uppercase tracking-widest text-indigo-500 bg-indigo-50 px-2 md:px-3 py-1 rounded-full line-clamp-1">{m.category}</span>
+                      <div key={m.id} onClick={() => setSelectedMeetingId(isSelected ? null : m.id)} className={`bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm relative cursor-pointer hover:shadow-2xl transition-all ${isSelected ? 'ring-4 ring-indigo-500/20' : ''}`}>
+                        <div className="absolute top-0 right-0 px-5 py-2 bg-indigo-600 text-white text-[10px] font-black uppercase rounded-bl-[1.5rem] tracking-widest">T{m.tableNumber}</div>
+                        <div className="flex items-center justify-between mt-4">
+                          <img src={u1?.avatar} className="w-14 h-14 rounded-2xl object-cover shadow-md border-2 border-white" />
+                          <div className="text-[10px] font-black text-slate-200 tracking-[0.3em] rotate-90">VS</div>
+                          <img src={u2?.avatar} className="w-14 h-14 rounded-2xl object-cover shadow-md border-2 border-white" />
                         </div>
-                        
-                        <div className="flex items-center justify-between mb-4 md:mb-6">
-                          <div className="text-center flex-1">
-                            <img src={u1?.avatar} className="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl mx-auto mb-2 border-2 border-slate-50 shadow-sm" />
-                            <p className="text-[9px] md:text-[10px] font-black truncate max-w-[70px] mx-auto text-slate-900">{u1?.name || "???"}</p>
-                          </div>
-                          <div className="px-2">
-                            <div className="w-6 h-6 md:w-8 md:h-8 rounded-full bg-slate-50 flex items-center justify-center text-[8px] md:text-[10px] font-black text-slate-300 italic">VS</div>
-                          </div>
-                          <div className="text-center flex-1">
-                            <img src={u2?.avatar} className="w-10 h-10 md:w-12 md:h-12 rounded-lg md:rounded-xl mx-auto mb-2 border-2 border-slate-50 shadow-sm" />
-                            <p className="text-[9px] md:text-[10px] font-black truncate max-w-[70px] mx-auto text-slate-900">{u2?.name || "???"}</p>
-                          </div>
-                        </div>
-                        
-                        <div className="flex justify-between items-center mt-3 md:mt-4 pt-3 md:pt-4 border-t border-slate-50">
-                          <span className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase">{m.scheduledTime}</span>
-                          <span className={`text-[9px] md:text-[10px] font-black uppercase px-2 md:px-3 py-1 rounded-lg ${
-                            isOngoing ? 'bg-amber-100 text-amber-700 animate-pulse' : 
-                            isCompleted ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-400'
-                          }`}>
-                            {isOngoing ? 'EN COURS' : isCompleted ? 'FINI' : 'ATTENTE'}
-                          </span>
+                        <div className="mt-8 flex justify-center"><div className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase text-white shadow-lg ${color}`}>{status}</div></div>
+                        <div className={`mt-6 pt-4 border-t border-slate-50 space-y-2 transition-all ${isSelected ? 'opacity-100 max-h-40' : 'opacity-0 max-h-0 overflow-hidden'}`}>
+                           <p className="text-[11px] font-black text-slate-900 uppercase text-center leading-none">{u1?.name} & {u2?.name}</p>
+                           <p className="text-[8px] font-black text-slate-400 uppercase text-center tracking-widest">{m.category}</p>
+                           <p className="text-center font-black text-indigo-600 text-sm mt-2">{m.ratings?.reduce((acc, r) => acc + r.score, 0).toFixed(1) || '---'}</p>
                         </div>
                       </div>
                     );
@@ -519,61 +377,32 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
       )}
 
+      {/* RESULTS TAB */}
       {adminState === 'RESULTS' && (
-        <div className="space-y-8 md:space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-          <section>
-             <div className="flex flex-col md:flex-row justify-between items-center gap-4 md:gap-6 mb-8 md:mb-10 text-center md:text-left">
-                <div>
-                  <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter uppercase">PALMARÈS</h3>
-                  <p className="text-slate-500 text-sm md:text-lg font-medium">Analyse des Power Duos Saison 2.</p>
-                </div>
-                <div className="bg-emerald-500 text-white px-6 md:px-8 py-3 md:py-4 rounded-2xl md:rounded-3xl font-black shadow-lg shadow-emerald-200 uppercase tracking-widest text-[10px] md:text-sm">
-                   {duos.length} Duos Validés
-                </div>
-             </div>
-             
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-10">
-              {duos.length === 0 ? (
-                <div className="col-span-2 text-center p-16 md:p-32 bg-white rounded-3xl md:rounded-[3rem] border-2 border-dashed border-slate-200 text-slate-400 font-bold text-lg md:text-xl italic">
-                  Aucun round n'a encore été évalué par les deux parties.
-                </div>
-              ) : (
-                duos.map((d, i) => (
-                  <div key={i} className="bg-white p-6 md:p-10 rounded-[2rem] md:rounded-[3rem] shadow-2xl shadow-indigo-500/10 border border-slate-100 relative overflow-hidden group hover:-translate-y-2 transition-all duration-300">
-                     <div className="absolute top-0 left-0 w-2 md:w-3 h-full bg-emerald-500"></div>
-                     <div className="flex justify-between items-center mb-6 md:mb-8">
-                        <div className="flex -space-x-4 md:-space-x-6">
-                           <img src={d.p1?.avatar} className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-3xl border-4 md:border-8 border-white shadow-xl relative z-10 group-hover:rotate-6 transition-transform object-cover" />
-                           <img src={d.p2?.avatar} className="w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-3xl border-4 md:border-8 border-white shadow-xl relative z-0 group-hover:-rotate-6 transition-transform object-cover" />
-                        </div>
-                        <div className="text-right">
-                           <div className="text-4xl md:text-6xl font-black text-emerald-600 leading-none">{d.avg.toFixed(1)}</div>
-                           <div className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] md:tracking-[0.3em] mt-2">Synergie</div>
-                        </div>
-                     </div>
-                     <div className="mb-6 md:mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-2">
-                        <div>
-                           <p className="text-xl md:text-3xl font-black text-slate-900 tracking-tighter">{d.p1?.name} & {d.p2?.name}</p>
-                           <p className="text-[9px] md:text-xs font-black text-indigo-600 uppercase tracking-widest mt-1 md:mt-2 bg-indigo-50 px-3 md:px-4 py-1.5 rounded-full w-fit">{d.m.category}</p>
-                        </div>
-                        <div className="bg-emerald-50 text-emerald-700 px-3 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl font-black text-[8px] md:text-[10px] uppercase tracking-widest border border-emerald-100">TOP DUO</div>
-                     </div>
-                     <div className="pt-6 md:pt-8 border-t border-slate-100 bg-slate-50/50 -mx-6 md:-mx-10 px-6 md:px-10 pb-2">
-                        <h5 className="text-[9px] md:text-[10px] font-black text-slate-400 uppercase mb-3 md:mb-4 tracking-widest">Feedback croisé</h5>
-                        <div className="space-y-3 md:space-y-4">
-                           {d.m.ratings.map((r, ri) => (
-                              <div key={ri} className="flex items-start space-x-2 md:space-x-3">
-                                 <span className="text-emerald-500 mt-1 text-sm md:text-base">✓</span>
-                                 <p className="text-xs md:text-sm italic text-slate-700 leading-relaxed font-medium">"{r.comment || "Échange riche entre pairs."}"</p>
-                              </div>
-                           ))}
-                        </div>
-                     </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
+        <div className="space-y-12 animate-in fade-in duration-1000">
+          <h3 className="text-5xl font-black text-slate-900 uppercase italic tracking-tighter">Performance Duos</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {duos.length === 0 ? (
+              <div className="col-span-2 py-20 bg-white rounded-[3rem] text-center border-4 border-dashed border-slate-50">
+                <p className="text-slate-300 font-black uppercase tracking-widest">En attente de résultats...</p>
+              </div>
+            ) : duos.map((d, i) => (
+              <div key={i} className="bg-white p-12 rounded-[3.5rem] shadow-xl border border-slate-100 flex justify-between items-center group">
+                 <div className="flex -space-x-8">
+                    <img src={d.p1?.avatar} className="w-24 h-24 rounded-3xl border-8 border-white shadow-2xl rotate-[-6deg]" />
+                    <img src={d.p2?.avatar} className="w-24 h-24 rounded-3xl border-8 border-white shadow-2xl rotate-[6deg]" />
+                 </div>
+                 <div className="flex-1 px-12">
+                    <p className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-2">{d.p1?.name} & {d.p2?.name}</p>
+                    <p className="text-indigo-600 font-black uppercase text-[10px] tracking-widest">{d.m.category}</p>
+                 </div>
+                 <div className="text-center">
+                    <p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Total</p>
+                    <div className="text-5xl font-black text-emerald-500 italic">{(d.m.ratings?.reduce((acc, r) => acc + r.score, 0) || 0).toFixed(1)}</div>
+                 </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -16,10 +16,12 @@ export enum ProfessionalCategory {
 
 export interface User {
   id: string;
-  name: string;
+  name: string; // Nom complet pour compatibilité affichage
+  firstName: string;
+  lastName: string;
   company: string;
   role: string;
-  categories: ProfessionalCategory[]; // Changed from single category to array
+  categories: ProfessionalCategory[];
   bio: string;
   avatar: string;
   avgScore: number;
@@ -40,7 +42,7 @@ export interface Meeting {
   tableNumber: number;
   scheduledTime: string;
   round: number;
-  category: ProfessionalCategory; // The specific category this meeting is focused on
+  category: ProfessionalCategory; 
   actualStartTime?: number;
   status: 'scheduled' | 'ongoing' | 'completed';
   ratings: Rating[];

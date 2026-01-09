@@ -8,22 +8,25 @@ import { getIcebreakers } from '../services/geminiService';
 interface MeetingRoomProps {
   meeting: Meeting;
   participant: User;
+  // Fix: Added currentUser to props to allow the icebreaker service to analyze both participants
+  currentUser: User;
   onFinish: () => void;
 }
 
-export const MeetingRoom: React.FC<MeetingRoomProps> = ({ meeting, participant, onFinish }) => {
+export const MeetingRoom: React.FC<MeetingRoomProps> = ({ meeting, participant, currentUser, onFinish }) => {
   const [timeLeft, setTimeLeft] = useState(MEETING_DURATION_SECONDS);
   const [icebreakers, setIcebreakers] = useState<string[]>([]);
   const [loadingIcebreakers, setLoadingIcebreakers] = useState(true);
 
   useEffect(() => {
     const fetchIB = async () => {
-      const ib = await getIcebreakers(participant, participant); 
+      // Fix: Pass both currentUser and the meeting participant to get relevant icebreakers
+      const ib = await getIcebreakers(currentUser, participant); 
       setIcebreakers(ib);
       setLoadingIcebreakers(false);
     };
     fetchIB();
-  }, [participant]);
+  }, [participant, currentUser]);
 
   useEffect(() => {
     if (timeLeft <= 0) {

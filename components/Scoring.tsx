@@ -6,10 +6,12 @@ import { Button } from './Button';
 interface ScoringProps {
   meetingId: string;
   meetingUser: User;
+  // Fix: Added currentUser to track who is giving the rating
+  currentUser: User;
   onSubmit: (rating: Rating) => void;
 }
 
-export const Scoring: React.FC<ScoringProps> = ({ meetingId, meetingUser, onSubmit }) => {
+export const Scoring: React.FC<ScoringProps> = ({ meetingId, meetingUser, currentUser, onSubmit }) => {
   const [score, setScore] = useState<number>(0);
   const [comment, setComment] = useState('');
 
@@ -53,7 +55,8 @@ export const Scoring: React.FC<ScoringProps> = ({ meetingId, meetingUser, onSubm
       <Button
         className="w-full h-14 md:h-16 text-lg md:text-xl font-bold shadow-indigo-200 shadow-xl rounded-xl md:rounded-2xl"
         disabled={score === 0}
-        onClick={() => onSubmit({ meetingId, fromId: 'pair-current', toId: meetingUser.id, score, comment })}
+        // Fix: Use the currentUser ID for fromId instead of a hardcoded string
+        onClick={() => onSubmit({ meetingId, fromId: currentUser.id, toId: meetingUser.id, score, comment })}
       >
         Valider
       </Button>

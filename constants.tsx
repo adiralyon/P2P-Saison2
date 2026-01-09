@@ -5,6 +5,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u1',
     name: 'Alice Martin',
+    // Fix: Added missing required firstName and lastName properties
+    firstName: 'Alice',
+    lastName: 'Martin',
     company: 'DataStream Solutions',
     role: 'Head of Data',
     categories: [ProfessionalCategory.DATA_IA, ProfessionalCategory.DSI],
@@ -15,6 +18,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u2',
     name: 'Jean Dupont',
+    // Fix: Added missing required firstName and lastName properties
+    firstName: 'Jean',
+    lastName: 'Dupont',
     company: 'SecurIT',
     role: 'RSSI',
     categories: [ProfessionalCategory.RSSI_CYBER],
@@ -25,6 +31,9 @@ export const MOCK_USERS: User[] = [
   {
     id: 'u3',
     name: 'Sophie Laurent',
+    // Fix: Added missing required firstName and lastName properties
+    firstName: 'Sophie',
+    lastName: 'Laurent',
     company: 'Global Infra',
     role: 'Directeur Infrastructures',
     categories: [ProfessionalCategory.INFRA_NET, ProfessionalCategory.ARCHITECTE],

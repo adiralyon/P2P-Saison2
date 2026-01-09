@@ -9,7 +9,8 @@ interface RegistrationProps {
 
 export const Registration: React.FC<RegistrationProps> = ({ onRegister }) => {
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     company: '',
     role: '',
     categories: [ProfessionalCategory.DSI] as ProfessionalCategory[],
@@ -22,10 +23,12 @@ export const Registration: React.FC<RegistrationProps> = ({ onRegister }) => {
       alert("Veuillez sélectionner au moins une catégorie.");
       return;
     }
+    const fullName = `${formData.firstName} ${formData.lastName}`.trim();
     const newUser: User = {
       id: `u-${Math.random().toString(36).substr(2, 9)}`,
       ...formData,
-      avatar: `https://picsum.photos/seed/${formData.name}/200`,
+      name: fullName,
+      avatar: `https://picsum.photos/seed/${fullName}/200`,
       avgScore: 0
     };
     onRegister(newUser);
@@ -52,16 +55,30 @@ export const Registration: React.FC<RegistrationProps> = ({ onRegister }) => {
       <form onSubmit={handleSubmit} className="space-y-6 md:space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
           <div className="space-y-1 md:space-y-2">
-            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Prénom & Nom</label>
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Prénom</label>
             <input
               type="text"
               required
-              placeholder="Jean Dupont"
+              placeholder="Jean"
               className="w-full p-4 md:p-5 rounded-xl md:rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 transition-all font-bold placeholder:font-medium placeholder:text-slate-300"
-              value={formData.name}
-              onChange={e => setFormData({ ...formData, name: e.target.value })}
+              value={formData.firstName}
+              onChange={e => setFormData({ ...formData, firstName: e.target.value })}
             />
           </div>
+          <div className="space-y-1 md:space-y-2">
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Nom</label>
+            <input
+              type="text"
+              required
+              placeholder="Dupont"
+              className="w-full p-4 md:p-5 rounded-xl md:rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 transition-all font-bold placeholder:font-medium placeholder:text-slate-300"
+              value={formData.lastName}
+              onChange={e => setFormData({ ...formData, lastName: e.target.value })}
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
           <div className="space-y-1 md:space-y-2">
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Entreprise</label>
             <input
@@ -73,18 +90,17 @@ export const Registration: React.FC<RegistrationProps> = ({ onRegister }) => {
               onChange={e => setFormData({ ...formData, company: e.target.value })}
             />
           </div>
-        </div>
-
-        <div className="space-y-1 md:space-y-2">
-          <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fonction</label>
-          <input
-            type="text"
-            required
-            placeholder="Ex: DSI Groupe, Expert Cyber..."
-            className="w-full p-4 md:p-5 rounded-xl md:rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 transition-all font-bold placeholder:font-medium placeholder:text-slate-300"
-            value={formData.role}
-            onChange={e => setFormData({ ...formData, role: e.target.value })}
-          />
+          <div className="space-y-1 md:space-y-2">
+            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-2">Fonction</label>
+            <input
+              type="text"
+              required
+              placeholder="Ex: DSI Groupe, Expert Cyber..."
+              className="w-full p-4 md:p-5 rounded-xl md:rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 transition-all font-bold placeholder:font-medium placeholder:text-slate-300"
+              value={formData.role}
+              onChange={e => setFormData({ ...formData, role: e.target.value })}
+            />
+          </div>
         </div>
 
         <div className="space-y-3 md:space-y-4">

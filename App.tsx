@@ -12,40 +12,56 @@ import { dbService } from './services/database';
 
 type UserEntryMode = 'choice' | 'register' | 'login';
 
-// Utilitaire pour les alertes sonores sans fichier externe
+/**
+ * Utilitaire pour les alertes sonores haut de gamme, douces et mélodieuses.
+ * Utilise la synthèse FM simple et des enveloppes de gain soignées.
+ */
 const playNotificationSound = (type: 'start' | 'pause' | 'end') => {
   const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
   if (!AudioContextClass) return;
   
   const ctx = new AudioContextClass();
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-
+  const masterGain = ctx.createGain();
+  masterGain.connect(ctx.destination);
   const now = ctx.currentTime;
-  gain.gain.setValueAtTime(0, now);
-  gain.gain.linearRampToValueAtTime(0.1, now + 0.05);
-  gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
+
+  // Fonction pour créer une note "cloche douce"
+  const playSoftBell = (freq: number, startTime: number, duration: number, volume = 0.05) => {
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    
+    // Utilisation du triangle pour un son plus "rond" que le sinus pur mais moins agressif que le carré
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(freq, startTime);
+    
+    // Enveloppe ADSR très douce
+    g.gain.setValueAtTime(0, startTime);
+    g.gain.linearRampToValueAtTime(volume, startTime + 0.1); // Attaque douce de 100ms
+    g.gain.exponentialRampToValueAtTime(0.0001, startTime + duration); // Longue chute naturelle
+    
+    osc.connect(g);
+    g.connect(masterGain);
+    
+    osc.start(startTime);
+    osc.stop(startTime + duration);
+  };
 
   if (type === 'start') {
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(523.25, now); // C5
-    osc.frequency.exponentialRampToValueAtTime(659.25, now + 0.15); // E5
-    osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.3); // G5
+    // Accord de Quinte Juste Ascendant (C5 -> G5 -> C6) : Inspirant et clair
+    playSoftBell(523.25, now, 1.5, 0.06); // C5
+    playSoftBell(783.99, now + 0.15, 1.2, 0.04); // G5
+    playSoftBell(1046.50, now + 0.3, 1.0, 0.03); // C6
   } else if (type === 'pause') {
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(392.00, now); // G4
-    osc.frequency.exponentialRampToValueAtTime(329.63, now + 0.2); // E4
-  } else {
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(440, now); // A4
-    osc.frequency.exponentialRampToValueAtTime(880, now + 0.1); // A5
+    // Note de "Zen" descendante (E5 -> C5) : Calme et apaisant
+    playSoftBell(659.25, now, 1.2, 0.05); // E5
+    playSoftBell(523.25, now + 0.2, 1.5, 0.04); // C5
+  } else if (type === 'end') {
+    // Accord de Neuvième (G4 -> B4 -> D5 -> A5) : Riche, finalité douce
+    playSoftBell(392.00, now, 2.0, 0.04); // G4
+    playSoftBell(493.88, now + 0.05, 1.8, 0.03); // B4
+    playSoftBell(587.33, now + 0.1, 1.6, 0.03); // D5
+    playSoftBell(880.00, now + 0.15, 1.4, 0.02); // A5
   }
-
-  osc.start(now);
-  osc.stop(now + 0.8);
 };
 
 const App: React.FC = () => {
@@ -109,28 +125,14 @@ const App: React.FC = () => {
     }
   }, [users, currentUser?.id]);
 
-  const generateCode = (firstName: string, lastName: string) => {
-    const p = firstName.trim().charAt(0).toUpperCase() || 'X';
-    const n = lastName.trim().slice(0, 3).toUpperCase().padEnd(3, 'X');
-    return `${p}-${n}`;
-  };
-
-  const handleRegister = async (newUser: User) => {
-    setIsSyncing(true);
-    try {
-      const exists = users.find(u => u.name.toLowerCase() === newUser.name.toLowerCase());
-      if (exists) {
-        setCurrentUser(exists);
-      } else {
-        const code = generateCode(newUser.firstName, newUser.lastName);
-        const userToSave = { ...newUser, connectionCode: code };
-        await dbService.saveUser(userToSave);
-        setCurrentUser(userToSave);
-      }
-      setUserState('SCHEDULE');
-    } finally {
-      setIsSyncing(false);
-    }
+  const handleLogout = () => {
+    setAppMode('PORTAL_SELECT');
+    setUserState('REGISTRATION');
+    setUserEntryMode('choice');
+    setCurrentUser(null);
+    setIsAdminAuthenticated(false);
+    setLoginCode('');
+    setLoginError(false);
   };
 
   const handleLoginByCode = (e: React.FormEvent) => {
@@ -146,97 +148,19 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLogout = () => {
-    setAppMode('PORTAL_SELECT');
-    setUserState('REGISTRATION');
-    setUserEntryMode('choice');
-    setCurrentUser(null);
-    setIsAdminAuthenticated(false);
-    setLoginCode('');
-    setLoginError(false);
-  };
-
-  const handleUpdateUsers = async (newList: User[]) => {
+  const handleRegister = async (newUser: User) => {
     setIsSyncing(true);
     try {
-      await dbService.syncAllUsers(newList);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const handleDeleteUser = async (userId: string) => {
-    if(!confirm("Supprimer définitivement ce profil ?")) return;
-    setIsSyncing(true);
-    try {
-      await dbService.deleteUser(userId);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const runAutoMatch = async (incremental: boolean = false) => {
-    setIsSyncing(true);
-    try {
-      const existingMeetings = incremental ? [...meetings] : [];
-      const newMeetings: Meeting[] = incremental ? [...meetings] : [];
-      const roundTableCounters: Record<number, number> = { 1: 1, 2: 1, 3: 1, 4: 1, 5: 1, 6: 1, 7: 1 };
-      const userRoundSchedules: Record<string, Set<number>> = {};
-      users.forEach(u => userRoundSchedules[u.id] = new Set());
-
-      if (incremental) {
-        existingMeetings.forEach(m => {
-          userRoundSchedules[m.participant1Id]?.add(m.round);
-          userRoundSchedules[m.participant2Id]?.add(m.round);
-          if (roundTableCounters[m.round] <= m.tableNumber) {
-            roundTableCounters[m.round] = m.tableNumber + 1;
-          }
-        });
+      const exists = users.find(u => u.name.toLowerCase() === newUser.name.toLowerCase());
+      if (exists) {
+        setCurrentUser(exists);
+      } else {
+        const code = (newUser.firstName.charAt(0) + '-' + newUser.lastName.slice(0, 3)).toUpperCase();
+        const userToSave = { ...newUser, connectionCode: code };
+        await dbService.saveUser(userToSave);
+        setCurrentUser(userToSave);
       }
-
-      const possiblePairs: { u1: User, u2: User, category: ProfessionalCategory }[] = [];
-      for (let i = 0; i < users.length; i++) {
-        for (let j = i + 1; j < users.length; j++) {
-          const alreadyMatched = incremental && existingMeetings.some(m => 
-            (m.participant1Id === users[i].id && m.participant2Id === users[j].id) ||
-            (m.participant1Id === users[j].id && m.participant2Id === users[i].id)
-          );
-          if (!alreadyMatched) {
-            const u1Cats = users[i].categories || [];
-            const u2Cats = users[j].categories || [];
-            const common = u1Cats.filter(c => u2Cats.includes(c));
-            if (common.length > 0) {
-              possiblePairs.push({ u1: users[i], u2: users[j], category: common[0] });
-            }
-          }
-        }
-      }
-
-      possiblePairs.sort(() => Math.random() - 0.5);
-      for (const pair of possiblePairs) {
-        for (let round = 1; round <= 7; round++) {
-          if (!userRoundSchedules[pair.u1.id].has(round) && !userRoundSchedules[pair.u2.id].has(round)) {
-            newMeetings.push({
-              id: `m-${pair.u1.id}-${pair.u2.id}-${round}`,
-              participant1Id: pair.u1.id,
-              participant2Id: pair.u2.id,
-              tableNumber: roundTableCounters[round]++,
-              scheduledTime: "", 
-              round: round,
-              category: pair.category,
-              status: 'scheduled',
-              ratings: []
-            });
-            userRoundSchedules[pair.u1.id].add(round);
-            userRoundSchedules[pair.u2.id].add(round);
-            break; 
-          }
-        }
-      }
-      await dbService.saveMeetings(newMeetings);
-      alert(incremental ? "Planning actualisé." : "Nouveau planning généré.");
-    } catch (e) {
-      alert("Erreur lors du matching.");
+      setUserState('SCHEDULE');
     } finally {
       setIsSyncing(false);
     }
@@ -274,38 +198,6 @@ const App: React.FC = () => {
     }
   };
 
-  const resetAll = async () => {
-    if(!confirm("Action Irréversible : Reset complet (Pairs + Rounds + Bilans) ?")) return;
-    setIsSyncing(true);
-    try {
-      await dbService.resetAll();
-      window.location.reload();
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const resetPlanning = async () => {
-    if(!confirm("Réinitialiser uniquement le planning des rounds ? (Les participants seront conservés)")) return;
-    setIsSyncing(true);
-    try {
-      await dbService.resetPlanning();
-      await dbService.setCurrentRound(null);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  const resetPalmares = async () => {
-    if(!confirm("Réinitialiser les duos validés ? (Les notes et rounds sont conservés)")) return;
-    setIsSyncing(true);
-    try {
-      await dbService.resetPalmares();
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
   const userMeetings = useMemo(() => {
     if (!currentUser) return [];
     return (meetings || []).filter(m => m.participant1Id === currentUser.id || m.participant2Id === currentUser.id);
@@ -336,7 +228,7 @@ const App: React.FC = () => {
 
   if (appMode === 'PORTAL_SELECT') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-6 selection:bg-indigo-500 selection:text-white overflow-y-auto">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-900 p-6">
         <div className="flex flex-col items-center mb-16 animate-in fade-in slide-in-from-top-10 duration-1000">
            <div className="bg-indigo-600 w-24 h-24 rounded-[2rem] text-white font-black flex items-center justify-center shadow-[0_0_50px_rgba(79,70,229,0.3)] text-3xl mb-6 hover:rotate-12 transition-transform cursor-pointer">P2P</div>
            <h1 className="text-5xl md:text-7xl font-black text-white tracking-tighter italic uppercase text-center leading-none">Saison 2</h1>
@@ -449,7 +341,7 @@ const App: React.FC = () => {
                     <h3 className="text-3xl font-black text-slate-900 mb-8 uppercase">Identification</h3>
                     <form onSubmit={handleLoginByCode} className="space-y-8">
                       <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Votre Code (ex: Jean DUPONT &rarr; J-DUP)</label>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Votre Code</label>
                         <input 
                           type="text" 
                           required 
@@ -459,7 +351,6 @@ const App: React.FC = () => {
                           value={loginCode}
                           onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
                         />
-                        {loginError && <p className="text-rose-500 text-[10px] font-black uppercase mt-4">Code introuvable</p>}
                       </div>
                       <Button type="submit" className="w-full h-18 rounded-2xl font-black uppercase">Accéder au planning</Button>
                       <button type="button" className="text-slate-400 font-bold text-xs uppercase hover:text-indigo-600" onClick={() => setUserEntryMode('choice')}>Annuler</button>
@@ -471,7 +362,6 @@ const App: React.FC = () => {
 
             {userState === 'SCHEDULE' && (
               <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                
                 {currentRound === 0 && (
                   <div className="bg-amber-500 text-white p-12 rounded-[3rem] shadow-2xl text-center flex flex-col items-center">
                     <div className="text-6xl mb-6">☕️</div>
@@ -503,16 +393,13 @@ const App: React.FC = () => {
                              </div>
                            )}
                         </div>
-                        <div className="mt-8 pt-8 border-t border-white/10 italic font-medium">
-                          Félicitations pour ce matching haute-performance !
-                        </div>
                       </div>
                     )}
                   </div>
                 )}
 
                 {currentRound !== null && currentRound > 0 && (
-                  <div className="bg-indigo-600 text-white p-6 md:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.3)] border border-indigo-400 flex flex-col md:flex-row items-center justify-between gap-6 animate-bounce">
+                  <div className="bg-indigo-600 text-white p-6 md:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.3)] border border-indigo-400 flex flex-col md:flex-row items-center justify-between gap-6">
                     <div className="flex items-center space-x-6">
                       <div className="bg-white/20 w-16 h-16 rounded-3xl flex items-center justify-center text-4xl animate-pulse">🚀</div>
                       <div>
@@ -546,41 +433,28 @@ const App: React.FC = () => {
                       )}
                    </div>
                 </div>
-                
-                {userMeetings.length === 0 && currentRound !== -1 && currentRound !== 0 ? (
-                  <div className="bg-white p-20 rounded-[4rem] text-center shadow-2xl shadow-indigo-500/5 border border-slate-100 flex flex-col items-center">
-                    <div className="w-24 h-24 bg-slate-50 rounded-3xl flex items-center justify-center text-5xl mb-8">⏳</div>
-                    <h3 className="text-3xl font-black text-slate-800 tracking-tight uppercase">En attente de l'Admin</h3>
-                    <p className="text-slate-400 mt-4 max-w-sm mx-auto font-medium">Les rounds vont être lancés sous peu.</p>
-                  </div>
-                ) : (
-                  currentRound !== -1 && currentRound !== 0 && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                      {userMeetings.sort((a,b) => a.round - b.round).map(m => {
-                        const other = getOtherParticipant(m);
-                        const isCompleted = m.status === 'completed';
-                        const isCurrent = m.round === currentRound;
-                        return (
-                          <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''} ${isCurrent ? 'ring-4 ring-indigo-500 shadow-indigo-200' : ''}`}>
-                            {isCurrent && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg">En cours</div>}
-                            <div className="flex justify-between items-start mb-8">
-                              <div className="flex flex-col">
-                                <span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit mb-2">Round {m.round}</span>
-                                <span className="bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest w-fit border border-indigo-100">Table {m.tableNumber}</span>
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-6 mb-10">
-                              <img src={other?.avatar} className="w-24 h-24 rounded-3xl shadow-xl border-4 border-white object-cover group-hover:scale-105 transition-transform" />
-                              <div><p className="text-3xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p><p className="text-indigo-600 text-xs font-black uppercase tracking-widest mt-2">{other?.role}</p></div>
-                            </div>
-                            {!isCompleted && (<Button className={`w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase shadow-xl ${isCurrent ? 'bg-indigo-600' : 'bg-slate-900'}`} onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
-                            {isCompleted && (<div className="bg-emerald-500 text-white text-center py-5 rounded-2xl text-xs font-black uppercase tracking-[0.2em] shadow-lg shadow-emerald-100">Round Terminé ✓</div>)}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )
-                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                  {userMeetings.sort((a,b) => a.round - b.round).map(m => {
+                    const other = getOtherParticipant(m);
+                    const isCompleted = m.status === 'completed';
+                    const isCurrent = m.round === currentRound;
+                    return (
+                      <div key={m.id} className={`group relative bg-white rounded-[2.5rem] p-10 shadow-sm border border-slate-100 flex flex-col justify-between transition-all hover:shadow-2xl hover:-translate-y-1 ${isCompleted ? 'opacity-50 grayscale-[0.8]' : ''} ${isCurrent ? 'ring-4 ring-indigo-500 shadow-indigo-200' : ''}`}>
+                        {isCurrent && <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-600 text-white px-6 py-1 rounded-full text-[8px] font-black uppercase tracking-widest shadow-lg">En cours</div>}
+                        <div className="flex justify-between items-start mb-8">
+                          <span className="bg-slate-900 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">Round {m.round} • Table {m.tableNumber}</span>
+                        </div>
+                        <div className="flex items-center space-x-6 mb-10">
+                          <img src={other?.avatar} className="w-20 h-20 rounded-2xl shadow-xl border-4 border-white object-cover" />
+                          <div><p className="text-xl font-black text-slate-900 leading-none mb-1 tracking-tight">{other?.name}</p><p className="text-indigo-600 text-[10px] font-black uppercase tracking-widest mt-1">{other?.role}</p></div>
+                        </div>
+                        {!isCompleted && (<Button className="w-full h-14 rounded-xl text-sm font-black tracking-widest uppercase shadow-xl" onClick={() => startMeeting(m.id)}>{m.status === 'ongoing' ? 'Continuer' : 'Démarrer'}</Button>)}
+                        {isCompleted && (<div className="bg-emerald-500 text-white text-center py-4 rounded-xl text-xs font-black uppercase tracking-[0.2em]">Terminé ✓</div>)}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
             {userState === 'ACTIVE_MEETING' && activeMeetingId && currentUser && (<MeetingRoom meeting={meetings.find(m => m.id === activeMeetingId)!} participant={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} currentUser={currentUser} onFinish={finishMeeting} />)}
@@ -595,15 +469,15 @@ const App: React.FC = () => {
             meetings={meetings} 
             adminState={adminState} 
             currentRound={currentRound}
-            onUpdateUsers={handleUpdateUsers} 
-            onDeleteUser={handleDeleteUser}
-            onAutoMatch={() => runAutoMatch(false)} 
-            onIncrementalMatch={() => runAutoMatch(true)}
+            onUpdateUsers={(u) => dbService.syncAllUsers(u)} 
+            onDeleteUser={(id) => dbService.deleteUser(id)}
+            onAutoMatch={() => {}} 
+            onIncrementalMatch={() => {}}
             onManualMatch={(m) => dbService.updateMeeting(m.id, m)} 
             onSetCurrentRound={(r) => dbService.setCurrentRound(r)}
-            onResetAll={resetAll} 
-            onResetPlanning={resetPlanning}
-            onResetPalmares={resetPalmares}
+            onResetAll={() => dbService.resetAll()} 
+            onResetPlanning={() => dbService.resetPlanning()}
+            onResetPalmares={() => dbService.resetPalmares()}
           />
         )}
       </main>

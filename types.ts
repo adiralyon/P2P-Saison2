@@ -16,7 +16,7 @@ export enum ProfessionalCategory {
 
 export interface User {
   id: string;
-  name: string; // Nom complet pour compatibilité affichage
+  name: string; 
   firstName: string;
   lastName: string;
   company: string;
@@ -25,13 +25,14 @@ export interface User {
   bio: string;
   avatar: string;
   avgScore: number;
+  connectionCode?: string; // Nouveau champ pour le code de connexion
 }
 
 export interface Rating {
   meetingId: string;
   fromId: string;
   toId: string;
-  score: number; // 1-5
+  score: number; 
   comment?: string;
 }
 

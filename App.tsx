@@ -10,15 +10,20 @@ import { AdminDashboard } from './components/AdminDashboard';
 import { AdminAuth } from './components/AdminAuth';
 import { dbService } from './services/database';
 
+type UserEntryMode = 'choice' | 'register' | 'login';
+
 const App: React.FC = () => {
   const [appMode, setAppMode] = useState<AppMode>('PORTAL_SELECT');
   const [userState, setUserState] = useState<UserSubState>('REGISTRATION');
+  const [userEntryMode, setUserEntryMode] = useState<UserEntryMode>('choice');
   const [adminState, setAdminState] = useState<AdminSubState>('PROFILES');
   
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [loginCode, setLoginCode] = useState('');
+  const [loginError, setLoginError] = useState(false);
   
   const [users, setUsers] = useState<User[]>([]);
   const [meetings, setMeetings] = useState<Meeting[]>([]);
@@ -56,13 +61,28 @@ const App: React.FC = () => {
       if (exists) {
         setCurrentUser(exists);
       } else {
-        await dbService.saveUser(newUser);
-        setCurrentUser(newUser);
+        // Génération d'un code de connexion manuel
+        const code = newUser.lastName.slice(0, 4).toUpperCase().padEnd(4, 'X');
+        const userToSave = { ...newUser, connectionCode: code };
+        await dbService.saveUser(userToSave);
+        setCurrentUser(userToSave);
       }
       setUserState('SCHEDULE');
-      setAppMode('USER_PORTAL');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleLoginByCode = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = loginCode.trim().toUpperCase();
+    const found = users.find(u => u.connectionCode?.toUpperCase() === q);
+    if (found) {
+      setCurrentUser(found);
+      setUserState('SCHEDULE');
+    } else {
+      setLoginError(true);
+      setTimeout(() => setLoginError(false), 2000);
     }
   };
 
@@ -231,7 +251,7 @@ const App: React.FC = () => {
            <p className="text-slate-400 font-bold uppercase tracking-[0.3em] text-[10px] mt-4 opacity-60">Speed Matching Entre Pairs</p>
         </div>
         <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 animate-in fade-in zoom-in duration-700 delay-300">
-          <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2.5rem] border border-white/10 text-center hover:bg-white/10 hover:scale-[1.02] transition-all cursor-pointer group shadow-2xl flex flex-col items-center" onClick={() => setAppMode('USER_PORTAL')}>
+          <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2.5rem] border border-white/10 text-center hover:bg-white/10 hover:scale-[1.02] transition-all cursor-pointer group shadow-2xl flex flex-col items-center" onClick={() => { setAppMode('USER_PORTAL'); setUserEntryMode('choice'); }}>
             <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-8 text-3xl group-hover:scale-110 transition-transform shadow-inner">👋</div>
             <h2 className="text-3xl font-black text-white mb-2 tracking-tight">Portail Pair</h2>
             <p className="text-indigo-200/50 text-xs mb-8 uppercase font-bold tracking-widest">Accès Participant</p>
@@ -244,10 +264,6 @@ const App: React.FC = () => {
             <Button className="w-full h-16 rounded-2xl text-lg font-black tracking-widest uppercase" variant="secondary">Gérer</Button>
           </div>
         </div>
-        <div className="mt-20 flex items-center space-x-2 text-slate-500 font-bold text-[9px] uppercase tracking-widest opacity-40">
-           <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></div>
-           <span>Cloud Synchronized & AI Powered</span>
-        </div>
       </div>
     );
   }
@@ -255,7 +271,7 @@ const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#FDFDFF] flex flex-col">
       <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-8 py-5 flex justify-between items-center sticky top-0 z-50">
-        <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => setAppMode('PORTAL_SELECT')}>
+        <div className="flex items-center space-x-3 cursor-pointer group" onClick={() => { setAppMode('PORTAL_SELECT'); setCurrentUser(null); }}>
           <div className="bg-indigo-600 w-10 h-10 rounded-xl text-white font-black flex items-center justify-center shadow-lg text-sm group-hover:rotate-12 transition-transform">P2P</div>
           <div className="flex flex-col leading-none">
             <span className="font-black text-2xl text-slate-900 tracking-tighter italic uppercase">Saison 2</span>
@@ -280,17 +296,71 @@ const App: React.FC = () => {
                </div>
             )
           )}
-          <Button variant="outline" size="sm" className="rounded-xl font-bold text-[10px] uppercase tracking-widest border-slate-200" onClick={() => { setAppMode('PORTAL_SELECT'); setIsAdminAuthenticated(false); }}>Sortie</Button>
+          <Button variant="outline" size="sm" className="rounded-xl font-bold text-[10px] uppercase tracking-widest border-slate-200" onClick={() => { setAppMode('PORTAL_SELECT'); setIsAdminAuthenticated(false); setCurrentUser(null); }}>Sortie</Button>
         </div>
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-8">
         {appMode === 'USER_PORTAL' && (
           <>
-            {userState === 'REGISTRATION' && <Registration onRegister={handleRegister} />}
+            {userState === 'REGISTRATION' && (
+              <>
+                {userEntryMode === 'choice' && (
+                  <div className="max-w-2xl mx-auto space-y-12 py-20 text-center animate-in zoom-in duration-500">
+                    <h2 className="text-5xl font-black text-slate-900 tracking-tight italic uppercase">Bienvenue Pair</h2>
+                    <div className="space-y-6">
+                      <Button 
+                        size="lg" 
+                        className="w-full h-24 rounded-[2rem] text-2xl font-black uppercase shadow-2xl shadow-indigo-500/10"
+                        onClick={() => setUserEntryMode('register')}
+                      >
+                        M'inscrire
+                      </Button>
+                      <button 
+                        className="text-indigo-600 font-black uppercase text-sm tracking-widest hover:underline"
+                        onClick={() => setUserEntryMode('login')}
+                      >
+                        Se connecter avec un identifiant
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
+                {userEntryMode === 'register' && (
+                  <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+                    <Registration onRegister={handleRegister} />
+                    <div className="mt-8 text-center">
+                      <button className="text-slate-400 font-bold text-xs uppercase hover:text-indigo-600" onClick={() => setUserEntryMode('choice')}>← Retour</button>
+                    </div>
+                  </div>
+                )}
+
+                {userEntryMode === 'login' && (
+                  <div className="max-w-md mx-auto bg-white p-12 rounded-[3rem] shadow-2xl border border-slate-100 animate-in fade-in slide-in-from-left-4 duration-500 text-center">
+                    <h3 className="text-3xl font-black text-slate-900 mb-8 uppercase">Identification</h3>
+                    <form onSubmit={handleLoginByCode} className="space-y-8">
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Votre Code (ex: DUPONT -> DUPO)</label>
+                        <input 
+                          type="text" 
+                          required 
+                          maxLength={4}
+                          className={`w-full h-20 text-center text-4xl font-black tracking-[0.4em] bg-slate-50 border-4 rounded-3xl outline-none transition-all ${loginError ? 'border-rose-500 animate-shake' : 'border-slate-100 focus:border-indigo-600'}`}
+                          value={loginCode}
+                          onChange={(e) => setLoginCode(e.target.value.toUpperCase())}
+                        />
+                        {loginError && <p className="text-rose-500 text-[10px] font-black uppercase mt-4">Code introuvable</p>}
+                      </div>
+                      <Button type="submit" className="w-full h-18 rounded-2xl font-black uppercase">Accéder au planning</Button>
+                      <button type="button" className="text-slate-400 font-bold text-xs uppercase hover:text-indigo-600" onClick={() => setUserEntryMode('choice')}>Annuler</button>
+                    </form>
+                  </div>
+                )}
+              </>
+            )}
+
             {userState === 'SCHEDULE' && (
               <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-700">
-                {/* BANNIÈRE ROUND ACTIF POUR LE PARTICIPANT */}
                 {currentRound && (
                   <div className="bg-indigo-600 text-white p-6 md:p-10 rounded-[2.5rem] shadow-[0_20px_50px_rgba(79,70,229,0.3)] border border-indigo-400 flex flex-col md:flex-row items-center justify-between gap-6 animate-bounce">
                     <div className="flex items-center space-x-6">
@@ -312,7 +382,7 @@ const App: React.FC = () => {
                 <div className="flex justify-between items-end border-b border-slate-100 pb-8">
                    <div>
                     <h2 className="text-6xl font-black text-slate-900 tracking-tighter uppercase italic">Mon Planning</h2>
-                    <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">Saison 2 • Live Sessions</p>
+                    <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mt-2">{currentUser?.name} • Session Live</p>
                    </div>
                 </div>
                 {userMeetings.length === 0 ? (

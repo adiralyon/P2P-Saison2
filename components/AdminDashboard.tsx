@@ -40,6 +40,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [selectedMeetingId, setSelectedMeetingId] = useState<string | null>(null);
   const [editingExpertiseUserId, setEditingExpertiseUserId] = useState<string | null>(null);
   const [importText, setImportText] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editExpertiseRef = useRef<HTMLDivElement>(null);
   
@@ -96,16 +97,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const sortedUsers = useMemo(() => {
+  const filteredAndSortedUsers = useMemo(() => {
     if (!users || !Array.isArray(users)) return [];
-    return [...users].sort((a, b) => {
+    
+    let filtered = [...users];
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(u => 
+        u.firstName.toLowerCase().includes(q) || 
+        u.lastName.toLowerCase().includes(q) || 
+        u.company.toLowerCase().includes(q) || 
+        u.role.toLowerCase().includes(q) ||
+        u.connectionCode?.toLowerCase().includes(q)
+      );
+    }
+
+    return filtered.sort((a, b) => {
       let valA: any = a[sortField] || '';
       let valB: any = b[sortField] || '';
       if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [users, sortField, sortOrder]);
+  }, [users, sortField, sortOrder, searchQuery]);
 
   const processImportData = (data: any[]) => {
     try {
@@ -118,6 +132,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         const lName = (row[nomKey || ''] || '').toString().trim();
         const fullName = `${fName} ${lName}`.trim();
 
+        // Génération du code de connexion (4 premières lettres du nom)
+        const code = lName.slice(0, 4).toUpperCase().padEnd(4, 'X');
+
         return {
           id: `u-${Math.random().toString(36).substr(2, 9)}`,
           firstName: fName || 'Prénom',
@@ -128,7 +145,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           categories: [ProfessionalCategory.AUTRE],
           bio: '', 
           avatar: `https://picsum.photos/seed/${fullName}${index}/200`,
-          avgScore: 0
+          avgScore: 0,
+          connectionCode: code
         };
       }).filter(u => u.lastName.length > 0 || u.firstName.length > 0);
 
@@ -155,15 +173,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleSaveUser = (e: React.FormEvent) => {
     e.preventDefault();
     const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+    // Génération automatique du code si manquant
+    const code = formData.lastName?.slice(0, 4).toUpperCase().padEnd(4, 'X');
+    
     if (editingUser) {
-      onUpdateUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...formData, name: fullName } as User : u));
+      onUpdateUsers(users.map(u => u.id === editingUser.id ? { ...editingUser, ...formData, name: fullName, connectionCode: u.connectionCode || code } as User : u));
     } else {
       const newUser: User = { 
         id: Math.random().toString(36).substr(2, 9), 
         avgScore: 0, 
         avatar: `https://picsum.photos/seed/${fullName}/200`, 
         ...formData,
-        name: fullName 
+        name: fullName,
+        connectionCode: code
       } as User;
       onUpdateUsers([...users, newUser]);
     }
@@ -187,96 +209,50 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const meetingsByRound = useMemo(() => {
     const rounds: Record<number, Meeting[]> = {};
-    const filtered = meetings.filter(m => {
+    let filtered = meetings.filter(m => {
       const catMatch = filterCategory === 'all' || m.category === filterCategory;
       const roundMatch = filterRound === 'all' || m.round === parseInt(filterRound);
       return catMatch && roundMatch;
     });
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(m => {
+        const u1 = users.find(u => u.id === m.participant1Id);
+        const u2 = users.find(u => u.id === m.participant2Id);
+        return u1?.name.toLowerCase().includes(q) || u2?.name.toLowerCase().includes(q) || m.category.toLowerCase().includes(q);
+      });
+    }
+
     filtered.forEach(m => {
       if (!rounds[m.round]) rounds[m.round] = [];
       rounds[m.round].push(m);
     });
     Object.keys(rounds).forEach(r => rounds[parseInt(r)].sort((a, b) => a.tableNumber - b.tableNumber));
     return Object.entries(rounds).sort(([a], [b]) => parseInt(a) - parseInt(b));
-  }, [meetings, filterCategory, filterRound]);
-
-  const duos = useMemo(() => {
-    return meetings
-      .filter(m => m.status === 'completed' && (m.ratings?.length || 0) > 0)
-      .map(m => ({ p1: users.find(u => u.id === m.participant1Id), p2: users.find(u => u.id === m.participant2Id), m }))
-      .filter(d => d.p1 && d.p2);
-  }, [meetings, users]);
+  }, [meetings, filterCategory, filterRound, searchQuery, users]);
 
   return (
     <div className="space-y-6 md:space-y-10 animate-in fade-in duration-500 pb-20">
-      {/* Import Modal */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4">
-          <div className="bg-white rounded-[2.5rem] shadow-2xl p-6 md:p-12 max-w-2xl w-full">
-            <h3 className="text-3xl font-black text-slate-900 mb-6 uppercase">Import de Contacts</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-              <div onClick={() => fileInputRef.current?.click()} className="h-48 border-4 border-dashed border-indigo-50 rounded-[2rem] bg-indigo-50/20 flex flex-col items-center justify-center cursor-pointer hover:bg-indigo-50 transition-all">
-                <div className="text-4xl mb-4">📊</div>
-                <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Excel / CSV</p>
-                <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls, .csv" onChange={handleExcelImport} />
-              </div>
-              <textarea className="w-full p-6 bg-slate-50 border border-slate-100 rounded-[2rem] h-48 font-mono text-[10px] outline-none" placeholder="Prénom, Nom (par ligne)" value={importText} onChange={(e) => setImportText(e.target.value)} />
-            </div>
-            <div className="flex space-x-4">
-              <Button onClick={() => {
-                const lines = importText.split('\n').filter(l => l.trim().length > 0);
-                processImportData(lines.map(l => l.includes(',') ? { 'Prénom': l.split(',')[0], 'Nom': l.split(',')[1] } : { 'Prénom': l.trim() }));
-                setImportText('');
-              }} className="flex-1 h-16 rounded-2xl font-black uppercase text-xs">Importer</Button>
-              <Button variant="outline" onClick={() => setShowImportModal(false)} className="h-16 px-10 rounded-2xl font-black uppercase text-xs">Fermer</Button>
-            </div>
-          </div>
+      {/* Recherche Globale / Filtre */}
+      <div className="sticky top-[80px] z-40 bg-white/80 backdrop-blur-md p-4 border-b border-slate-100 rounded-2xl shadow-sm">
+        <div className="max-w-xl mx-auto relative group">
+          <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-600 transition-colors">🔍</span>
+          <input 
+            type="text" 
+            placeholder="Rechercher un pair, une entreprise, un code..." 
+            className="w-full h-14 pl-14 pr-6 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-900 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-600 transition-all outline-none"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
         </div>
-      )}
-
-      {/* Add/Edit Modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/90 backdrop-blur-md p-4 overflow-y-auto">
-          <div className="bg-white rounded-[3rem] shadow-2xl p-10 max-w-3xl w-full my-8">
-            <h3 className="text-3xl font-black text-slate-900 mb-8 uppercase italic">{editingUser ? 'Modifier le Pair' : 'Nouveau Pair'}</h3>
-            <form onSubmit={handleSaveUser} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Prénom</label><input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.firstName} onChange={e => setFormData({ ...formData, firstName: e.target.value })} /></div>
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Nom</label><input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.lastName} onChange={e => setFormData({ ...formData, lastName: e.target.value })} /></div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Entreprise</label><input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.company} onChange={e => setFormData({ ...formData, company: e.target.value })} /></div>
-                <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Fonction</label><input type="text" required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold outline-none" value={formData.role} onChange={e => setFormData({ ...formData, role: e.target.value })} /></div>
-              </div>
-              <div className="space-y-4">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Expertises (Multi-choix)</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-48 overflow-y-auto p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                  {Object.values(ProfessionalCategory).map(cat => (
-                    <label key={cat} className="flex items-center space-x-3 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-indigo-300 transition-all">
-                      <input type="checkbox" className="w-5 h-5 rounded text-indigo-600" checked={formData.categories?.includes(cat)} onChange={() => {
-                        const cats = formData.categories || [];
-                        setFormData({ ...formData, categories: cats.includes(cat) ? cats.filter(c => c !== cat) : [...cats, cat] });
-                      }} />
-                      <span className="text-xs font-bold text-slate-700 truncate">{cat}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-              <div><label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Bio & Centres d'Intérêt</label><textarea className="w-full p-4 md:p-6 rounded-2xl bg-slate-50 border border-slate-200 focus:outline-none font-medium italic text-slate-700 text-sm" rows={3} value={formData.bio} onChange={e => setFormData({ ...formData, bio: e.target.value })} /></div>
-              <div className="flex space-x-3 pt-6">
-                <Button type="submit" className="flex-1 h-16 rounded-2xl font-black uppercase tracking-widest shadow-xl">Sauvegarder</Button>
-                <Button variant="outline" onClick={() => setShowAddModal(false)} className="h-16 px-10 rounded-2xl font-black uppercase text-xs tracking-widest">Annuler</Button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* PROFILES TAB */}
       {adminState === 'PROFILES' && (
         <div className="bg-white rounded-[3rem] shadow-sm border border-slate-100 overflow-hidden min-h-[600px]">
           <div className="p-10 border-b border-slate-50 flex flex-col md:flex-row justify-between items-center gap-6 bg-slate-50/30">
-            <div><h3 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Les Pairs</h3><p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-2">{users.length} inscrits synchronisés</p></div>
+            <div><h3 className="text-4xl font-black text-slate-900 tracking-tighter uppercase italic">Les Pairs</h3><p className="text-slate-400 font-bold uppercase tracking-widest text-[10px] mt-2">{filteredAndSortedUsers.length} affichés sur {users.length}</p></div>
             <div className="flex gap-3">
                <Button variant="outline" size="sm" className="rounded-xl font-bold px-6 border-slate-200" onClick={() => setShowImportModal(true)}>Import</Button>
                <Button size="sm" className="rounded-xl font-black uppercase px-8 shadow-xl" onClick={openAdd}>Ajouter</Button>
@@ -289,6 +265,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <tr className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
                   <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('firstName')}>Prénom</th>
                   <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('lastName')}>Nom</th>
+                  <th className="px-10 py-6">Code</th>
                   <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('role')}>Fonction</th>
                   <th className="px-10 py-6 cursor-pointer hover:text-indigo-600" onClick={() => handleSort('company')}>Entreprise</th>
                   <th className="px-10 py-6">Expertises</th>
@@ -296,10 +273,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {sortedUsers.map(u => (
+                {filteredAndSortedUsers.map(u => (
                   <tr key={u.id} className="hover:bg-indigo-50/10 transition-colors group">
                     <td className="px-10 py-6 font-bold text-slate-900">{u.firstName}</td>
                     <td className="px-10 py-6 font-black text-slate-900 uppercase tracking-tight">{u.lastName}</td>
+                    <td className="px-10 py-6"><span className="bg-indigo-50 text-indigo-700 font-black px-2 py-1 rounded text-[10px] border border-indigo-100">{u.connectionCode || '----'}</span></td>
                     <td className="px-10 py-6 text-sm font-medium text-slate-600">{u.role}</td>
                     <td className="px-10 py-6 text-sm font-bold text-indigo-600">{u.company}</td>
                     <td className="px-10 py-6 relative">
@@ -307,20 +285,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         {(u.categories || []).length > 0 ? (
                            u.categories.map(cat => (<span key={cat} className="text-[7px] font-black text-indigo-700 bg-indigo-50 px-2 py-1 rounded-full border border-indigo-100 uppercase">{cat}</span>))
                         ) : (<span className="text-[7px] font-bold text-slate-300 uppercase tracking-widest italic">Aucune</span>)}
-                        {editingExpertiseUserId === u.id && (
-                          <div ref={editExpertiseRef} className="absolute left-0 top-full mt-2 z-[150] w-[300px] bg-white border border-slate-200 shadow-2xl rounded-3xl p-6 animate-in zoom-in-95 slide-in-from-top-2">
-                             <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Modifier Expertises</h4>
-                             <div className="grid grid-cols-1 gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                                {Object.values(ProfessionalCategory).map(cat => (
-                                  <label key={cat} className="flex items-center justify-between p-2 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
-                                    <span className={`text-[10px] font-bold ${u.categories.includes(cat) ? 'text-indigo-600' : 'text-slate-500'}`}>{cat}</span>
-                                    <input type="checkbox" className="w-4 h-4 rounded text-indigo-600" checked={u.categories.includes(cat)} onChange={() => toggleInlineExpertise(u.id, cat)} />
-                                  </label>
-                                ))}
-                             </div>
-                             <div className="mt-4 pt-4 border-t border-slate-50 flex justify-end"><button onClick={() => setEditingExpertiseUserId(null)} className="text-[9px] font-black text-indigo-600 uppercase tracking-widest hover:underline">Terminer</button></div>
-                          </div>
-                        )}
                       </div>
                     </td>
                     <td className="px-10 py-6 text-right space-x-4">
@@ -410,23 +374,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     );
                   })}
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* RESULTS TAB */}
-      {adminState === 'RESULTS' && (
-        <div className="space-y-12">
-          <h3 className="text-5xl font-black text-slate-900 uppercase italic tracking-tighter text-center md:text-left">Performance Duos</h3>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {duos.length === 0 ? (<div className="col-span-2 py-20 bg-white rounded-[3rem] text-center border-4 border-dashed border-slate-50"><p className="text-slate-300 font-black uppercase tracking-widest">En attente de résultats...</p></div>) : 
-            duos.map((d, i) => (
-              <div key={i} className="bg-white p-12 rounded-[3.5rem] shadow-xl border border-slate-100 flex justify-between items-center group transition-all hover:scale-[1.01]">
-                 <div className="flex -space-x-8"><img src={d.p1?.avatar} className="w-24 h-24 rounded-3xl border-8 border-white shadow-2xl rotate-[-6deg]" /><img src={d.p2?.avatar} className="w-24 h-24 rounded-3xl border-8 border-white shadow-2xl rotate-[6deg]" /></div>
-                 <div className="flex-1 px-12"><p className="text-2xl font-black text-slate-900 tracking-tight leading-none mb-2">{d.p1?.firstName} & {d.p2?.firstName}</p><p className="text-indigo-600 font-black uppercase text-[10px] tracking-widest">{d.m.category}</p></div>
-                 <div className="text-center"><p className="text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1">Synergie</p><div className="text-5xl font-black text-emerald-500 italic">{(d.m.ratings?.reduce((acc, r) => acc + r.score, 0) || 0).toFixed(1)}</div></div>
               </div>
             ))}
           </div>

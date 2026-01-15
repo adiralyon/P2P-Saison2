@@ -79,13 +79,11 @@ const App: React.FC = () => {
 
   const prevRoundRef = useRef<number | null>(null);
 
-  // Synchronisation avec Firebase et Restauration de session
   useEffect(() => {
     const unsubscribeUsers = dbService.subscribeToUsers((cloudUsers) => {
       setUsers(cloudUsers || []);
       setIsLoading(false);
 
-      // Tentative de reconnexion automatique si pas encore loggé mais ID en cache
       const savedUserId = localStorage.getItem(STORAGE_KEYS.USER_ID);
       const savedUserCode = localStorage.getItem(STORAGE_KEYS.USER_CODE);
       
@@ -373,7 +371,7 @@ const App: React.FC = () => {
                    <div className="bg-indigo-600 w-20 h-20 rounded-[1.8rem] text-white font-black flex items-center justify-center shadow-[0_0_50px_rgba(79,70,229,0.3)] text-2xl mx-auto mb-8 animate-bounce">P2P</div>
                    <h1 className="text-6xl md:text-8xl font-black text-slate-900 tracking-tighter italic uppercase leading-none">Saison 2</h1>
                    <div className="h-1.5 w-24 bg-indigo-500 mx-auto rounded-full"></div>
-                   <p className="text-slate-400 font-bold uppercase tracking-[0.4em] text-[12px] opacity-80 pt-4">Speed Matching Haute Performance</p>
+                   <p className="text-slate-600 font-bold uppercase tracking-[0.4em] text-[12px] pt-4">Matchez avec vos pairs !</p>
                 </div>
 
                 <div className="bg-slate-100 p-1.5 rounded-2xl flex space-x-1 mb-12 shadow-inner">
@@ -469,6 +467,29 @@ const App: React.FC = () => {
             {userState === 'ACTIVE_MEETING' && activeMeetingId && currentUser && (<MeetingRoom meeting={meetings.find(m => m.id === activeMeetingId)!} participant={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} currentUser={currentUser} onFinish={finishMeeting} />)}
             {userState === 'SCORING' && activeMeetingId && currentUser && (<Scoring meetingId={activeMeetingId} meetingUser={getOtherParticipant(meetings.find(m => m.id === activeMeetingId)!)!} currentUser={currentUser} onSubmit={submitRating} />)}
             {userState === 'SYNTHESIS' && currentUser && (<Synthesis currentUser={currentUser} meetings={meetings} users={users} onBack={() => setUserState('SCHEDULE')} />)}
+            
+            {userState === 'DATA_MANAGEMENT' && (
+              <div className="max-w-2xl mx-auto py-20 animate-in zoom-in duration-500">
+                <div className="bg-white p-12 rounded-[3.5rem] shadow-2xl border border-slate-100 text-center space-y-8">
+                  <div className="w-20 h-20 bg-indigo-600 rounded-[1.5rem] text-white flex items-center justify-center mx-auto text-3xl">🛡️</div>
+                  <h2 className="text-4xl font-black text-slate-900 uppercase italic tracking-tighter">Gestion des données</h2>
+                  <div className="text-left space-y-6 text-slate-600 font-medium leading-relaxed">
+                    <p>
+                      La protection de votre vie privée est notre priorité absolue. Nous appliquons une politique de confidentialité stricte "Zéro Trace Long Terme".
+                    </p>
+                    <div className="bg-slate-50 p-6 rounded-2xl border-l-4 border-indigo-600">
+                       <p className="font-bold text-slate-900">
+                         Les données sont stockées uniquement durant la session de matching et seront intégralement supprimées de la plateforme dès la fin de la soirée.
+                       </p>
+                    </div>
+                    <p>
+                      Aucun profil, historique d'échange ou note n'est conservé après l'événement. Votre avatar et vos informations d'entreprise ne sont visibles que par les pairs participant à la même session.
+                    </p>
+                  </div>
+                  <Button variant="outline" className="w-full h-16 rounded-2xl font-black uppercase tracking-widest border-slate-200" onClick={() => setUserState(currentUser ? 'SCHEDULE' : 'REGISTRATION')}>Fermer</Button>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -478,11 +499,26 @@ const App: React.FC = () => {
       </main>
 
       <footer className="p-12 text-center border-t border-slate-100 mt-auto bg-slate-50/50">
-        <div className="max-w-xl mx-auto space-y-4">
+        <div className="max-w-xl mx-auto space-y-6">
           <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.5em]">Propulsé par Gemini AI • Saison 2 Experience</p>
-          {!isAdminAuthenticated && appMode !== 'ADMIN_PORTAL' && !currentUser && (
-            <button onClick={() => setAppMode('ADMIN_PORTAL')} className="text-[8px] font-black text-slate-200 uppercase tracking-widest hover:text-indigo-400 transition-colors pt-8">Accès Organisateur</button>
-          )}
+          
+          <div className="flex flex-col items-center gap-4">
+            <button 
+              onClick={() => setUserState('DATA_MANAGEMENT')}
+              className="text-[10px] font-bold text-indigo-500/60 uppercase tracking-widest hover:text-indigo-600 transition-colors"
+            >
+              Gestion des données
+            </button>
+
+            {!isAdminAuthenticated && appMode !== 'ADMIN_PORTAL' && (
+              <button 
+                onClick={() => setAppMode('ADMIN_PORTAL')} 
+                className="text-[10px] font-black text-slate-400 bg-slate-200/50 px-4 py-2 rounded-xl uppercase tracking-widest hover:bg-indigo-50 hover:text-indigo-600 transition-all border border-transparent hover:border-indigo-100 shadow-sm"
+              >
+                Accès Organisateur
+              </button>
+            )}
+          </div>
         </div>
       </footer>
     </div>

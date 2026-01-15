@@ -51,5 +51,5 @@ export interface Meeting {
 }
 
 export type AppMode = 'PORTAL_SELECT' | 'USER_PORTAL' | 'ADMIN_PORTAL';
-export type UserSubState = 'REGISTRATION' | 'SCHEDULE' | 'ACTIVE_MEETING' | 'SCORING' | 'SYNTHESIS';
+export type UserSubState = 'REGISTRATION' | 'SCHEDULE' | 'ACTIVE_MEETING' | 'SCORING' | 'SYNTHESIS' | 'DATA_MANAGEMENT';
 export type AdminSubState = 'PROFILES' | 'PLANNING' | 'RESULTS';

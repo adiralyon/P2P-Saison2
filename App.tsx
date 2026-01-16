@@ -316,6 +316,7 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-[#FDFDFF] flex flex-col">
+      {/* HEADER PARTICIPANT CONNECTÉ */}
       {currentUser && appMode !== 'ADMIN_PORTAL' && (
         <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-4 md:px-8 py-4 flex justify-between items-center sticky top-0 z-50 animate-in slide-in-from-top duration-500">
           <div className="flex items-center space-x-3 cursor-pointer group" onClick={handleLogout}>
@@ -345,6 +346,7 @@ const App: React.FC = () => {
         </header>
       )}
 
+      {/* HEADER ADMIN */}
       {appMode === 'ADMIN_PORTAL' && isAdminAuthenticated && (
         <header className="bg-slate-900 border-b border-slate-800 px-4 md:px-8 py-4 flex justify-between items-center sticky top-0 z-50">
           <div className="flex items-center space-x-3">
@@ -362,7 +364,18 @@ const App: React.FC = () => {
         </header>
       )}
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-8 relative">
+        {/* BOUTON ADMIN ROUE CRANTÉE (Seulement en page d'accueil déconnectée) */}
+        {!currentUser && userState === 'REGISTRATION' && appMode === 'USER_PORTAL' && (
+          <button 
+            onClick={() => setAppMode('ADMIN_PORTAL')}
+            className="absolute top-4 right-4 md:top-8 md:right-8 w-12 h-12 bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-indigo-600 rounded-2xl flex items-center justify-center text-2xl transition-all shadow-sm z-[60]"
+            title="Accès Organisateur"
+          >
+            ⚙️
+          </button>
+        )}
+
         {appMode === 'USER_PORTAL' && (
           <>
             {userState === 'REGISTRATION' && !currentUser && (
@@ -371,7 +384,7 @@ const App: React.FC = () => {
                    <div className="bg-indigo-600 w-20 h-20 rounded-[1.8rem] text-white font-black flex items-center justify-center shadow-[0_0_50px_rgba(79,70,229,0.3)] text-2xl mx-auto mb-8 animate-bounce">P2P</div>
                    <h1 className="text-6xl md:text-8xl font-black text-slate-900 tracking-tighter italic uppercase leading-none">Saison 2</h1>
                    <div className="h-1.5 w-24 bg-indigo-500 mx-auto rounded-full"></div>
-                   <p className="text-slate-600 font-bold uppercase tracking-[0.4em] text-[12px] pt-4">Matchez avec vos pairs !</p>
+                   <p className="text-slate-600 font-bold uppercase tracking-[0.4em] text-[12px] pt-4 italic">Matchez avec vos pairs !</p>
                 </div>
 
                 <div className="bg-slate-100 p-1.5 rounded-2xl flex space-x-1 mb-12 shadow-inner">
@@ -499,26 +512,15 @@ const App: React.FC = () => {
       </main>
 
       <footer className="p-12 text-center border-t border-slate-100 mt-auto bg-slate-50/50">
-        <div className="max-w-xl mx-auto space-y-6">
+        <div className="max-w-xl mx-auto space-y-4">
           <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.5em]">Propulsé par Gemini AI • Saison 2 Experience</p>
           
-          <div className="flex flex-col items-center gap-4">
-            <button 
-              onClick={() => setUserState('DATA_MANAGEMENT')}
-              className="text-[10px] font-bold text-indigo-500/60 uppercase tracking-widest hover:text-indigo-600 transition-colors"
-            >
-              Gestion des données
-            </button>
-
-            {!isAdminAuthenticated && appMode !== 'ADMIN_PORTAL' && (
-              <button 
-                onClick={() => setAppMode('ADMIN_PORTAL')} 
-                className="text-[10px] font-black text-slate-400 bg-slate-200/50 px-4 py-2 rounded-xl uppercase tracking-widest hover:bg-indigo-50 hover:text-indigo-600 transition-all border border-transparent hover:border-indigo-100 shadow-sm"
-              >
-                Accès Organisateur
-              </button>
-            )}
-          </div>
+          <button 
+            onClick={() => setUserState('DATA_MANAGEMENT')}
+            className="text-[10px] font-bold text-indigo-500/60 uppercase tracking-widest hover:text-indigo-600 transition-colors block mx-auto"
+          >
+            Gestion des données
+          </button>
         </div>
       </footer>
     </div>
